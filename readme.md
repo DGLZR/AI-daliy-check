@@ -1,1 +1,1 @@
-This is a first file to create git.
+This is a public daliy check that check what you do every day with the help of AI
