@@ -306,11 +306,130 @@ def run_and_store():
     return result
 
 
+def get_today_stats():
+    """
+    获取今日工作统计信息
+    
+    返回值：字典，包含以下信息
+    - record_count: 今日记录条数
+    - duration_hours: 今日使用时长（小时）
+    - main_work: 最长时间的工作类型
+    - hour_data: 每小时记录数列表（长度24）
+    - first_time: 最早使用时间
+    - last_time: 最晚使用时间
+    - time_range: 使用时间段描述
+    """
+    from store import read_summary, WORK_TYPES
+    
+    now = datetime.now()
+    today = now.strftime('%Y-%m-%d')
+    
+    summaries = read_summary()
+    summary = summaries.get(today, None)
+    
+    if summary:
+        record_count = int(summary.get('记录条数', '0'))
+        duration_hours = float(summary.get('使用时长(小时)', '0'))
+        main_work = summary.get('主要工作', '暂无')
+        first_time = summary.get('最早使用时间', '--:--')
+        last_time = summary.get('最晚使用时间', '--:--')
+        
+        # 获取每小时记录数
+        hour_data = []
+        for h in range(24):
+            count = int(summary.get(f'{h:02d}:00记录数', '0') or '0')
+            hour_data.append(count)
+        
+        # 生成时间段描述
+        if first_time != '--:--' and last_time != '--:--':
+            time_range = f"从{first_time[:5]}到{last_time[:5]}持续保持状态"
+        else:
+            time_range = "暂无记录"
+        
+        return {
+            'record_count': record_count,
+            'duration_hours': duration_hours,
+            'main_work': main_work,
+            'hour_data': hour_data,
+            'first_time': first_time,
+            'last_time': last_time,
+            'time_range': time_range
+        }
+    else:
+        return {
+            'record_count': 0,
+            'duration_hours': 0,
+            'main_work': '暂无',
+            'hour_data': [0] * 24,
+            'first_time': '--:--',
+            'last_time': '--:--',
+            'time_range': '暂无记录'
+        }
+
+
+def get_monitor_info():
+    """
+    获取显示器信息
+    
+    返回值：列表，每个元素包含显示器信息
+    - name: 显示器名称
+    - resolution: 分辨率
+    - scale: 缩放率
+    - refresh_rate: 帧率
+    """
+    import mss
+    
+    monitors = []
+    with mss.mss() as sct:
+        for i, monitor in enumerate(sct.monitors):
+            if i == 0:  # 跳过虚拟显示器（所有显示器的边界框）
+                continue
+            width = monitor['width']
+            height = monitor['height']
+            monitors.append({
+                'name': f'显示器 {i}',
+                'resolution': f'{width} x {height}',
+                'scale': '100%',  # mss无法直接获取缩放率
+                'refresh_rate': '60 Hz'  # mss无法直接获取帧率
+            })
+    
+    # 尝试使用Windows API获取更详细的信息
+    try:
+        import ctypes
+        user32 = ctypes.windll.user32
+        # 获取显示器数量
+        monitor_count = user32.GetSystemMetrics(80)  # SM_CMONITORS
+        if monitor_count > 0 and len(monitors) == 0:
+            # 如果mss没有获取到，使用系统信息
+            for i in range(monitor_count):
+                monitors.append({
+                    'name': f'显示器 {i + 1}',
+                    'resolution': '未知',
+                    'scale': '未知',
+                    'refresh_rate': '未知'
+                })
+    except:
+        pass
+    
+    return monitors if monitors else [{'name': '主显示器', 'resolution': '未知', 'scale': '未知', 'refresh_rate': '未知'}]
+
+
 # 测试函数
 if __name__ == '__main__':
     print("运行截图识别...")
     result = run_and_store()
     print(f"工作类型: {result['type']}")
-    print(f"工作描述: {result['description']}") 
-    store.print_daily_summary('2026-07-16')
+    print(f"工作描述: {result['description']}")
+    
+    print("\n今日统计:")
+    stats = get_today_stats()
+    print(f"  记录条数: {stats['record_count']}")
+    print(f"  使用时长: {stats['duration_hours']:.2f} 小时")
+    print(f"  主要工作: {stats['main_work']}")
+    print(f"  时间段: {stats['time_range']}")
+    
+    print("\n显示器信息:")
+    monitors = get_monitor_info()
+    for m in monitors:
+        print(f"  {m['name']}: {m['resolution']}, {m['scale']}, {m['refresh_rate']}")
     

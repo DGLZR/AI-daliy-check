@@ -1,0 +1,220 @@
+/* 工作日报助手 - QSS样式表 */
+
+/* ==================== 主窗口 ==================== */
+QMainWindow {
+    background-color: #FFFFFF;
+}
+
+QWidget#centralwidget {
+    background-color: #FFFFFF;
+}
+
+/* ==================== 左侧面板 ==================== */
+QFrame#leftPanel {
+    background-color: #F2F2F2;
+    border: none;
+}
+
+QFrame#logoFrame {
+    background-color: #F2F2F2;
+    border-bottom: 1px solid #E5E5E5;
+}
+
+QFrame#logoContent {
+    background-color: #F2F2F2;
+}
+
+QPushButton#toggleBtn {
+    background-color: transparent;
+    border: none;
+    padding: 5px;
+    font-size: 16px;
+    color: #666666;
+}
+
+QPushButton#toggleBtn:hover {
+    background-color: #E5E5E5;
+    border-radius: 4px;
+}
+
+QLabel#logoLabel {
+    color: #333333;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 5px;
+}
+
+QPushButton#toggleBtn {
+    background-color: transparent;
+    border: none;
+    padding: 8px;
+    font-size: 18px;
+    color: #666666;
+}
+
+QPushButton#toggleBtn:hover {
+    background-color: #E5E5E5;
+    border-radius: 4px;
+}
+
+/* ==================== 导航列表 ==================== */
+QListWidget#navList {
+    background-color: #F2F2F2;
+    border: none;
+    padding: 5px 0;
+}
+
+QListWidget#navList::item {
+    color: #333333;
+    padding: 12px 20px;
+    border-left: 3px solid transparent;
+}
+
+QListWidget#navList::item:hover {
+    background-color: #E5E5E5;
+    color: #333333;
+}
+
+QListWidget#navList::item:selected {
+    background-color: #E5E5E5;
+    color: #333333;
+    border-left: 3px solid #0078d4;
+}
+
+/* ==================== 内容区域 ==================== */
+QStackedWidget#contentStack {
+    background-color: #FFFFFF;
+    border: none;
+}
+
+QLabel#dashboardTitle,
+QLabel#screenshotTitle,
+QLabel#recordsTitle,
+QLabel#statsTitle,
+QLabel#settingsTitle {
+    font-size: 24px;
+    font-weight: bold;
+    color: #1a1a1a;
+    padding: 20px;
+    background-color: #FFFFFF;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+/* ==================== 统计卡片 ==================== */
+QFrame#statsFrame {
+    background-color: transparent;
+    padding: 20px;
+}
+
+QFrame#statCard1,
+QFrame#statCard2,
+QFrame#statCard3 {
+    background-color: #FFFFFF;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 15px;
+}
+
+QFrame#statCard1:hover,
+QFrame#statCard2:hover,
+QFrame#statCard3:hover {
+    border: 2px solid #0078d4;
+}
+
+QLabel#statLabel1,
+QLabel#statLabel2,
+QLabel#statLabel3 {
+    color: #666666;
+    font-size: 14px;
+}
+
+QLabel#statValue1,
+QLabel#statValue2,
+QLabel#statValue3 {
+    color: #1a1a1a;
+    font-size: 28px;
+    font-weight: bold;
+    padding-top: 5px;
+}
+
+/* ==================== 按钮 ==================== */
+QPushButton#captureBtn {
+    background-color: #0078d4;
+    color: #ffffff;
+    border: none;
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: bold;
+    border-radius: 4px;
+}
+
+QPushButton#captureBtn:hover {
+    background-color: #106ebe;
+}
+
+QPushButton#captureBtn:pressed {
+    background-color: #005a9e;
+}
+
+/* ==================== 表格 ==================== */
+QTableWidget#recordsTable {
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    gridline-color: #f0f0f0;
+    font-size: 13px;
+}
+
+QTableWidget#recordsTable::item {
+    padding: 10px;
+}
+
+QTableWidget#recordsTable::item:selected {
+    background-color: #e3f2fd;
+    color: #1a1a1a;
+}
+
+QHeaderView::section {
+    background-color: #f8f9fa;
+    color: #1a1a1a;
+    padding: 12px;
+    border: none;
+    border-bottom: 2px solid #0078d4;
+    font-weight: bold;
+}
+
+/* ==================== 滚动条 ==================== */
+QScrollBar:vertical {
+    background-color: #F2F2F2;
+    width: 8px;
+    margin: 0;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #c0c0c0;
+    border-radius: 4px;
+    min-height: 20px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #a0a0a0;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+/* ==================== 分割线 ==================== */
+QSplitter::handle {
+    background-color: #e0e0e0;
+    width: 1px;
+}
+
+QSplitter::handle:hover {
+    background-color: #0078d4;
+}
