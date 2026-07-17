@@ -3,6 +3,10 @@ import numpy as np
 import mss
 import ollama
 import base64
+import csv
+import os
+from datetime import datetime
+import store 
 
 
 def capture_screen():
@@ -25,11 +29,10 @@ def ollama_recognize():
     img = capture_screen()
     
     # 压缩图像，减少显存占用（限制最大宽度为1024）
-    max_width = 1024
+    max_width = 99999
     if img.shape[1] > max_width:
         ratio = max_width / img.shape[1]
         img = cv2.resize(img, (max_width, int(img.shape[0] * ratio)))
-    
     # 转换为base64编码（ollama需要base64格式的图像）
     _, buffer = cv2.imencode('.png', img)
     img_base64 = base64.b64encode(buffer).decode('utf-8')
@@ -44,14 +47,62 @@ def ollama_recognize():
 {', '.join(work_types)}
 
 分析规则：
-1. 如果屏幕显示代码编辑器、IDE、终端、命令行、编程相关网站 -> "开发"
-2. 如果屏幕显示聊天工具（微信、飞书、钉钉等）正在处理工作沟通 -> "沟通"
-3. 如果屏幕显示私人聊天、购物、游戏、视频等生活娱乐内容 -> "生活" 或 "娱乐"
-4. 如果屏幕显示在线课程、教程、文档学习、技术文章 -> "学习"
-5. 如果屏幕显示设计工具（Figma、PS、Sketch等）或UI/UX相关内容 -> "设计"
-6. 如果屏幕显示项目管理工具、表格、日程安排、会议 -> "管理"
-7. 如果屏幕显示Word、Excel、PPT、PDF等文档编辑 -> "文档"
-8. 如果无法明确判断 -> "其他"
+
+1. 开发类：
+- 屏幕显示代码编辑器（VS Code、PyCharm、IntelliJ、Sublime、Notepad++等）
+- 屏幕显示IDE界面（Eclipse、Xcode、Android Studio等）
+- 屏幕显示终端/命令行（CMD、PowerShell、Terminal、iTerm2等）
+- 屏幕显示编程相关网站（GitHub、GitLab、Stack Overflow、官方文档、API文档等）
+- 屏幕显示调试工具、性能分析工具、数据库管理工具
+- 屏幕显示代码仓库、版本控制界面、CI/CD界面
+
+2. 沟通类：
+- 屏幕显示聊天工具（微信、飞书、钉钉、Slack、Telegram、QQ、企业微信等）正在处理工作沟通
+- 屏幕显示邮件客户端（Outlook、Foxmail等）处理工作邮件
+- 屏幕显示视频会议工具（Zoom、腾讯会议、Teams等）
+- 屏幕显示工作群聊、项目讨论、任务分配等沟通内容
+
+3. 设计类：
+- 屏幕显示设计工具（Figma、Sketch、Adobe XD、Photoshop、Illustrator、InDesign等）
+- 屏幕显示UI/UX设计界面、原型设计工具
+- 屏幕显示图形编辑、图片处理、视频剪辑软件
+- 屏幕显示设计稿、界面设计、图标设计等
+
+4. 管理类：
+- 屏幕显示项目管理工具（Jira、Trello、Asana、禅道、飞书项目等）
+- 屏幕显示表格软件（Excel、Google Sheets、WPS表格等）处理数据、报表、统计
+- 屏幕显示日程安排、会议管理、任务看板
+- 屏幕显示OA系统、审批流程、工作汇报
+
+5. 文档类：
+- 屏幕显示Word、WPS文字、Google Docs等文档编辑
+- 屏幕显示PPT、Keynote、演示文稿制作
+- 屏幕显示PDF阅读器、文档查看
+- 屏幕显示笔记软件（Notion、Obsidian、OneNote等）记录工作内容
+
+6. 学习类：
+- 屏幕显示在线课程平台（Coursera、Udemy、B站学习区、慕课网等）
+- 屏幕显示技术教程、编程学习网站
+- 屏幕显示文档学习、技术文章、博客阅读
+- 屏幕显示电子书阅读器、学习资料
+
+7. 生活类：
+- 屏幕显示私人聊天（与朋友、家人的非工作沟通）
+- 屏幕显示购物网站（淘宝、京东、拼多多等）
+- 屏幕显示生活服务（外卖、打车、银行、支付宝等）
+- 屏幕显示社交媒体（朋友圈、微博、抖音等非娱乐内容）
+
+8. 娱乐类：
+- 屏幕显示视频播放器观看电影、电视剧、动漫、综艺节目
+- 屏幕显示游戏界面、游戏平台（Steam、Epic、PS、Xbox等）
+- 屏幕显示直播平台观看娱乐直播
+- 屏幕显示音乐播放器、音乐平台
+- 屏幕显示短视频平台（抖音、快手、B站娱乐区等）
+
+9. 其他类：
+- 无法明确判断的情况
+- 系统设置、文件管理器、计算器等工具
+- 浏览器空白页、搜索引擎首页
 
 description撰写规则：
 核心目标：
@@ -113,7 +164,8 @@ description撰写规则：
             'role': 'user',
             'content': prompt,
             'images': [img_base64]  # 传入base64编码的图像
-        }]
+        }],
+        think=True
     )
     
     # 解析返回结果
@@ -142,8 +194,123 @@ description撰写规则：
             'description': '无法识别工作内容'
         }
 
+def run_and_store():
+    """
+    运行截图识别并存储结果到CSV
+    
+    功能：
+    1. 调用ollama_recognize()进行截图识别
+    2. 计算与上一条记录的时间间隔（即上一条记录的持续时长）
+    3. 将新记录添加到records.csv
+    4. 更新daily_summary.csv中的汇总数据
+    
+    参数：无
+    返回值：字典，包含识别结果 {'type': '工作类型', 'description': '工作描述'}
+    """
+    from store import init_db, read_summary, read_records, write_summary, write_records, get_next_id, WORK_TYPES
+    
+    # 初始化数据库（确保文件夹和CSV文件存在）
+    init_db()
+    
+    # 获取当前系统时间
+    now = datetime.now()
+    today = now.strftime('%Y-%m-%d')      # 格式：2025-01-15
+    current_time = now.strftime('%H:%M:%S')  # 格式：09:30:00
+    
+    # 调用截图识别函数，获取工作类型和描述
+    result = ollama_recognize()
+    work_type = result['type']          # 工作类型，如"开发"、"沟通"
+    description = result['description'] # 工作描述，如"正在编写Python代码"
+    
+    # 读取现有数据
+    summaries = read_summary()  # 所有日期的汇总数据
+    records = read_records()    # 所有记录
+    
+    # 计算上一条记录的持续时长
+    duration_minutes = 0  # 默认为0分钟
+    # 筛选出今天的记录
+    today_records = [r for r in records if r['日期'] == today]
+    
+    if today_records:
+        # 获取今天最后一条记录
+        last_record = today_records[-1]
+        # 解析上一条记录的时间
+        last_time = datetime.strptime(f"{today} {last_record['时间']}", '%Y-%m-%d %H:%M:%S')
+        # 解析当前时间
+        current_dt = datetime.strptime(f"{today} {current_time}", '%Y-%m-%d %H:%M:%S')
+        # 计算时间差（转换为分钟）
+        duration_minutes = (current_dt - last_time).total_seconds() / 60
+        
+        # 更新上一条记录的持续时长
+        last_record['持续时长(分钟)'] = f'{duration_minutes:.1f}'
+    
+    # 创建新记录
+    new_id = get_next_id(records)  # 获取新ID
+    new_record = {
+        'ID': str(new_id),
+        '日期': today,
+        '时间': current_time,
+        '工作类型': work_type,
+        '工作描述': description,
+        '持续时长(分钟)': '0'  # 新记录的时长初始为0，下次记录时更新
+    }
+    records.append(new_record)  # 添加到记录列表
+    
+    # 更新每日汇总数据
+    if today in summaries:
+        # 今天已有记录，更新汇总
+        summary = summaries[today]
+        summary['记录条数'] = str(int(summary['记录条数']) + 1)  # 记录数+1
+        summary['最晚使用时间'] = current_time  # 更新最晚使用时间
+        # 更新总使用时长（加上本次时长，转换为小时）
+        summary['使用时长(小时)'] = f"{float(summary['使用时长(小时)']) + duration_minutes / 60:.2f}"
+        # 更新对应工作类型的时长
+        summary[f'{work_type}时长(小时)'] = f"{float(summary[f'{work_type}时长(小时)']) + duration_minutes / 60:.2f}"
+        
+        # 更新主要工作：取时长最长的工作类型
+        type_durations = {t: float(summary[f'{t}时长(小时)']) for t in WORK_TYPES}
+        summary['主要工作'] = max(type_durations, key=type_durations.get)
+        
+        # 更新当前小时的记录条数
+        current_hour = now.strftime('%H')  # 获取当前小时（00-23）
+        hour_key = f'{current_hour}:00记录数'
+        summary[hour_key] = str(int(summary.get(hour_key, '0')) + 1)
+    else:
+        # 今天第一条记录，创建新的汇总
+        summary = {
+            '日期': today,
+            '记录条数': '1',
+            '使用时长(小时)': '0',  # 第一条记录时长为0
+            '主要工作': work_type,
+            '最早使用时间': current_time,
+            '最晚使用时间': current_time
+        }
+        # 初始化所有工作类型的时长为0
+        for t in WORK_TYPES:
+            summary[f'{t}时长(小时)'] = '0'
+        # 初始化每个小时的记录数为0
+        for h in range(24):
+            summary[f'{h:02d}:00记录数'] = '0'
+        # 设置当前小时的记录数为1
+        current_hour = now.strftime('%H')
+        summary[f'{current_hour}:00记录数'] = '1'
+        summaries[today] = summary
+    
+    # 将更新后的数据写入CSV文件
+    write_summary(summaries)
+    write_records(records)
+    
+    # 打印记录信息
+    print(f"已记录: [{work_type}] {description}")
+    
+    return result
+
+
 # 测试函数
 if __name__ == '__main__':
-    result = ollama_recognize()
+    print("运行截图识别...")
+    result = run_and_store()
     print(f"工作类型: {result['type']}")
     print(f"工作描述: {result['description']}") 
+    store.print_daily_summary('2026-07-16')
+    
