@@ -69,14 +69,15 @@ def main():
     from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
                                  QLabel, QFrame, QScrollArea, QCheckBox,
                                  QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
-                                 QSizePolicy, QPushButton, QTableWidget, QTableWidgetItem)
+                                 QSizePolicy, QPushButton, QTableWidget, QTableWidgetItem,
+                                 QLineEdit)
     from qfluentwidgets import (FluentWindow, NavigationItemPosition, StrongBodyLabel,
                                 TitleLabel, SubtitleLabel, BodyLabel, CaptionLabel,
                                 PrimaryPushButton, TransparentPushButton,
                                 SimpleCardWidget, HeaderCardWidget, TableWidget,
                                 FluentIcon, ComboBox, InfoBar, InfoBarPosition)
     from store import init_db, get_daily_summary, get_daily_records
-    from screenshot import run_and_store, get_today_stats, get_monitor_info
+    from screenshot import run_and_store, get_today_stats, get_monitor_info, start_monitor, stop_monitor
 
     # ==================== 工具函数 ====================
     
@@ -1139,35 +1140,37 @@ def main():
             scrollArea.setStyleSheet("QScrollArea { border: none; background-color: #F5F5F5; }")
             
             contentWidget = QWidget()
-            contentWidget.setStyleSheet("background-color: #F5F5F5;")
+            contentWidget.setStyleSheet("background-color: #F5F5F5; border: none;")
             layout = QVBoxLayout(contentWidget)
-            layout.setSpacing(12)
-            layout.setContentsMargins(15, 10, 15, 10)
+            layout.setSpacing(15)
+            layout.setContentsMargins(20, 15, 20, 15)
             
-            title = SubtitleLabel("设置", self)
-            title.setStyleSheet("font-size: 14px; font-weight: bold;")
+            # 页面标题
+            title = QLabel("⚙️ 设置")
+            title.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
             layout.addWidget(title)
             
-            # 显示缩放设置
-            scaleTitle = SectionTitle("显示缩放", self)
-            layout.addWidget(scaleTitle)
-            
-            scaleCard = SimpleCardWidget(self)
-            scaleCard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            # ========== 显示缩放设置 ==========
+            scaleCard = QFrame()
+            scaleCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
             scaleLayout = QVBoxLayout(scaleCard)
-            scaleLayout.setContentsMargins(12, 10, 12, 10)
-            scaleLayout.setSpacing(6)
+            scaleLayout.setContentsMargins(20, 18, 20, 18)
+            scaleLayout.setSpacing(10)
             
-            scaleInfo = BodyLabel("界面缩放比例（修改后需重启程序生效）", scaleCard)
-            scaleInfo.setStyleSheet("color: #666666; font-size: 9px;")
+            scaleTitle = QLabel("🖥️ 显示缩放")
+            scaleTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            scaleLayout.addWidget(scaleTitle)
+            
+            scaleInfo = QLabel("界面缩放比例（修改后需重启程序生效）")
+            scaleInfo.setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;")
             scaleLayout.addWidget(scaleInfo)
             
             scaleComboLayout = QHBoxLayout()
-            scaleLabel = BodyLabel("缩放比例:", scaleCard)
-            scaleLabel.setStyleSheet("font-size: 10px;")
+            scaleLabel = QLabel("缩放比例:")
+            scaleLabel.setStyleSheet("font-size: 12px; color: #333333; border: none; background: transparent;")
             scaleComboLayout.addWidget(scaleLabel)
             
-            self.scaleCombo = ComboBox(scaleCard)
+            self.scaleCombo = ComboBox()
             self.scaleCombo.addItems(["25%", "50%", "75%", "100%", "125%", "150%", "175%", "200%"])
             self.scaleCombo.setCurrentText(f"{SCALE_FACTOR * 100:.0f}%")
             self.scaleCombo.currentTextChanged.connect(self.onScaleChanged)
@@ -1176,114 +1179,117 @@ def main():
             
             scaleLayout.addLayout(scaleComboLayout)
             
-            systemScaleLabel = BodyLabel(f"系统缩放: {get_system_dpi_scale() * 100:.0f}%", scaleCard)
-            systemScaleLabel.setStyleSheet("color: #888888; font-size: 9px;")
+            systemScaleLabel = QLabel(f"系统缩放: {get_system_dpi_scale() * 100:.0f}%")
+            systemScaleLabel.setStyleSheet("color: #999999; font-size: 10px; border: none; background: transparent;")
             scaleLayout.addWidget(systemScaleLabel)
             
             layout.addWidget(scaleCard)
             
-            # 服务器设置
-            serverTitle = SectionTitle("Ollama 服务器", self)
-            layout.addWidget(serverTitle)
-            
-            serverCard = SimpleCardWidget(self)
-            serverCard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            # ========== 服务器设置 ==========
+            serverCard = QFrame()
+            serverCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
             serverLayout = QVBoxLayout(serverCard)
-            serverLayout.setContentsMargins(12, 10, 12, 10)
-            serverLayout.setSpacing(6)
+            serverLayout.setContentsMargins(20, 18, 20, 18)
+            serverLayout.setSpacing(10)
             
-            serverInfo = BodyLabel("服务器地址", serverCard)
-            serverInfo.setStyleSheet("color: #666666; font-size: 9px;")
+            serverTitle = QLabel("🤖 Ollama 服务器")
+            serverTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            serverLayout.addWidget(serverTitle)
+            
+            serverInfo = QLabel("服务器地址")
+            serverInfo.setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;")
             serverLayout.addWidget(serverInfo)
             
-            serverUrl = StrongBodyLabel("http://192.168.31.23:11434", serverCard)
-            serverUrl.setStyleSheet("color: #0078d4; font-size: 11px;")
+            serverUrl = QLabel("http://192.168.31.23:11434")
+            serverUrl.setStyleSheet("color: #1976D2; font-size: 13px; font-weight: bold; border: none; background: transparent;")
             serverUrl.setWordWrap(True)
             serverLayout.addWidget(serverUrl)
             
-            serverStatus = BodyLabel("● 已连接", serverCard)
-            serverStatus.setStyleSheet("color: #4CAF50; font-size: 10px;")
+            serverStatus = QLabel("● 已连接")
+            serverStatus.setStyleSheet("color: #4CAF50; font-size: 12px; border: none; background: transparent;")
             serverLayout.addWidget(serverStatus)
             
             layout.addWidget(serverCard)
             
-            # 模型设置
-            modelTitle = SectionTitle("识别模型", self)
-            layout.addWidget(modelTitle)
-            
-            modelCard = SimpleCardWidget(self)
-            modelCard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            # ========== 模型设置 ==========
+            modelCard = QFrame()
+            modelCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
             modelLayout = QVBoxLayout(modelCard)
-            modelLayout.setContentsMargins(12, 10, 12, 10)
-            modelLayout.setSpacing(6)
+            modelLayout.setContentsMargins(20, 18, 20, 18)
+            modelLayout.setSpacing(10)
             
-            modelInfo = BodyLabel("当前模型", modelCard)
-            modelInfo.setStyleSheet("color: #666666; font-size: 9px;")
+            modelTitle = QLabel("🧠 识别模型")
+            modelTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            modelLayout.addWidget(modelTitle)
+            
+            modelInfo = QLabel("当前模型")
+            modelInfo.setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;")
             modelLayout.addWidget(modelInfo)
             
-            modelName = StrongBodyLabel("minicpm-v4.6", modelCard)
-            modelName.setStyleSheet("color: #333333; font-size: 11px;")
+            modelName = QLabel("minicpm-v4.6")
+            modelName.setStyleSheet("color: #333333; font-size: 14px; font-weight: bold; border: none; background: transparent;")
             modelLayout.addWidget(modelName)
             
-            modelDesc = BodyLabel("支持图像识别的多模态大语言模型", modelCard)
-            modelDesc.setStyleSheet("color: #888888; font-size: 9px;")
+            modelDesc = QLabel("支持图像识别的多模态大语言模型")
+            modelDesc.setStyleSheet("color: #666666; font-size: 11px; border: none; background: transparent;")
             modelDesc.setWordWrap(True)
             modelLayout.addWidget(modelDesc)
             
             layout.addWidget(modelCard)
             
-            # 数据存储
-            dataTitle = SectionTitle("数据存储", self)
-            layout.addWidget(dataTitle)
-            
-            dataCard = SimpleCardWidget(self)
-            dataCard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            # ========== 数据存储 ==========
+            dataCard = QFrame()
+            dataCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
             dataLayout = QVBoxLayout(dataCard)
-            dataLayout.setContentsMargins(12, 10, 12, 10)
-            dataLayout.setSpacing(6)
+            dataLayout.setContentsMargins(20, 18, 20, 18)
+            dataLayout.setSpacing(10)
             
-            pathInfo = BodyLabel("存储路径", dataCard)
-            pathInfo.setStyleSheet("color: #666666; font-size: 9px;")
+            dataTitle = QLabel("💾 数据存储")
+            dataTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            dataLayout.addWidget(dataTitle)
+            
+            pathInfo = QLabel("存储路径")
+            pathInfo.setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;")
             dataLayout.addWidget(pathInfo)
             
             dataPath = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
-            pathLabel = BodyLabel(dataPath, dataCard)
-            pathLabel.setStyleSheet("color: #333333; font-size: 9px;")
+            pathLabel = QLabel(dataPath)
+            pathLabel.setStyleSheet("color: #333333; font-size: 11px; border: none; background: transparent;")
             pathLabel.setWordWrap(True)
             pathLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
             dataLayout.addWidget(pathLabel)
             
-            filesLabel = BodyLabel("数据文件:", dataCard)
-            filesLabel.setStyleSheet("color: #666666; font-size: 9px; margin-top: 4px;")
+            filesLabel = QLabel("数据文件:")
+            filesLabel.setStyleSheet("color: #666666; font-size: 11px; border: none; background: transparent;")
             dataLayout.addWidget(filesLabel)
             
-            filesList = BodyLabel(
+            filesList = QLabel(
                 "• daily_summary.csv - 每日汇总数据\n"
-                "• records.csv - 截图分析记录",
-                dataCard
+                "• records.csv - 截图分析记录"
             )
-            filesList.setStyleSheet("color: #888888; font-size: 9px;")
+            filesList.setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;")
             filesList.setWordWrap(True)
             dataLayout.addWidget(filesList)
             
             layout.addWidget(dataCard)
             
-            # 关于
-            aboutTitle = SectionTitle("关于", self)
-            layout.addWidget(aboutTitle)
-            
-            aboutCard = SimpleCardWidget(self)
-            aboutCard.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            # ========== 关于 ==========
+            aboutCard = QFrame()
+            aboutCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
             aboutLayout = QVBoxLayout(aboutCard)
-            aboutLayout.setContentsMargins(12, 10, 12, 10)
+            aboutLayout.setContentsMargins(20, 18, 20, 18)
+            aboutLayout.setSpacing(8)
             
-            aboutText = BodyLabel(
+            aboutTitle = QLabel("ℹ️ 关于")
+            aboutTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            aboutLayout.addWidget(aboutTitle)
+            
+            aboutText = QLabel(
                 "工作日报助手 v1.0\n"
-                "自动截图分析工作内容，生成工作日报。",
-                aboutCard
+                "自动截图分析工作内容，生成工作日报。"
             )
             aboutText.setWordWrap(True)
-            aboutText.setStyleSheet("color: #666666; font-size: 9px; line-height: 1.4;")
+            aboutText.setStyleSheet("color: #666666; font-size: 12px; line-height: 1.5; border: none; background: transparent;")
             aboutLayout.addWidget(aboutText)
             
             layout.addWidget(aboutCard)
@@ -1333,6 +1339,441 @@ def main():
             except Exception as e:
                 print(f"保存配置失败: {e}")
 
+    # ==================== 管理监控页面 ====================
+    
+    class MonitorPage(QWidget):
+        """管理监控页面 - 定时自动截图分析"""
+        def __init__(self, main_window, parent=None):
+            super().__init__(parent)
+            from datetime import datetime  # 导入datetime模块
+            self.datetime = datetime  # 保存到实例变量
+            self.main_window = main_window
+            self.setObjectName("monitorPage")
+            self.is_monitoring = False  # 监控状态标志
+            
+            # 主布局
+            mainLayout = QVBoxLayout(self)
+            mainLayout.setContentsMargins(0, 0, 0, 0)
+            mainLayout.setSpacing(0)
+            
+            # 滚动区域
+            scrollArea = QScrollArea()
+            scrollArea.setWidgetResizable(True)
+            scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scrollArea.setStyleSheet("QScrollArea { border: none; background-color: #F5F5F5; }")
+            
+            contentWidget = QWidget()
+            contentWidget.setStyleSheet("background-color: #F5F5F5; border: none;")
+            layout = QVBoxLayout(contentWidget)
+            layout.setContentsMargins(20, 20, 20, 20)
+            layout.setSpacing(20)
+            
+            # ========== 页面标题 ==========
+            headerCard = QFrame()
+            headerCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
+            headerLayout = QHBoxLayout(headerCard)
+            headerLayout.setContentsMargins(20, 15, 20, 15)
+            
+            title = QLabel("⚙️ 管理监控")
+            title.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            headerLayout.addWidget(title)
+            headerLayout.addStretch()
+            
+            # 监控状态标签
+            self.statusBadge = QLabel("⏸️ 未监控")
+            self.statusBadge.setStyleSheet("""
+                QLabel {
+                    background-color: #E0E0E0;
+                    color: #666666;
+                    padding: 6px 14px;
+                    border-radius: 12px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    border: none;
+                }
+            """)
+            headerLayout.addWidget(self.statusBadge)
+            
+            layout.addWidget(headerCard)
+            
+            # ========== 监控间隔设置 ==========
+            intervalCard = QFrame()
+            intervalCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
+            intervalLayout = QVBoxLayout(intervalCard)
+            intervalLayout.setContentsMargins(20, 18, 20, 18)
+            intervalLayout.setSpacing(12)
+            
+            # 标题
+            intervalTitle = QLabel("⏱️ 监控间隔时长")
+            intervalTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            intervalLayout.addWidget(intervalTitle)
+            
+            # 说明
+            intervalDesc = QLabel("选择自动截图分析的时间间隔，点击开始后将在第一个间隔结束后进行首次分析")
+            intervalDesc.setStyleSheet("font-size: 11px; color: #888888; border: none; background: transparent;")
+            intervalDesc.setWordWrap(True)
+            intervalLayout.addWidget(intervalDesc)
+            
+            # 间隔选择网格
+            intervalGrid = QGridLayout()
+            intervalGrid.setSpacing(10)
+            
+            # 间隔选项（分钟数，显示文本）
+            self.interval_options = [
+                (1, "1 分钟"), (2, "2 分钟"), (5, "5 分钟"),
+                (10, "10 分钟"), (15, "15 分钟"), (20, "20 分钟"),
+                (30, "30 分钟"), (60, "1 小时"), (120, "2 小时")
+            ]
+            
+            self.interval_buttons = []
+            self.selected_interval = 10  # 默认选中10分钟
+            
+            for i, (minutes, text) in enumerate(self.interval_options):
+                btn = QPushButton(text)
+                btn.setCheckable(True)
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.setMinimumHeight(40)
+                
+                # 默认选中10分钟
+                if minutes == 10:
+                    btn.setChecked(True)
+                
+                # 样式
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #F5F5F5;
+                        color: #333333;
+                        border: 2px solid #E0E0E0;
+                        border-radius: 8px;
+                        font-size: 12px;
+                        font-weight: bold;
+                        padding: 8px 16px;
+                    }
+                    QPushButton:checked {
+                        background-color: #E3F2FD;
+                        color: #1976D2;
+                        border: 2px solid #1976D2;
+                    }
+                    QPushButton:hover {
+                        background-color: #E8F5E9;
+                        border: 2px solid #4CAF50;
+                    }
+                """)
+                
+                # 点击事件
+                btn.clicked.connect(lambda checked, m=minutes, b=btn: self.selectInterval(m, b))
+                
+                self.interval_buttons.append(btn)
+                intervalGrid.addWidget(btn, i // 3, i % 3)
+            
+            intervalLayout.addLayout(intervalGrid)
+            layout.addWidget(intervalCard)
+            
+            # ========== Ollama 服务器设置 ==========
+            ollamaCard = QFrame()
+            ollamaCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
+            ollamaLayout = QVBoxLayout(ollamaCard)
+            ollamaLayout.setContentsMargins(20, 18, 20, 18)
+            ollamaLayout.setSpacing(12)
+            
+            # 标题
+            ollamaTitle = QLabel("🤖 Ollama 服务器")
+            ollamaTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            ollamaLayout.addWidget(ollamaTitle)
+            
+            # 输入框和按钮
+            inputLayout = QHBoxLayout()
+            inputLayout.setSpacing(10)
+            
+            # 默认Ollama地址
+            self.default_ollama_host = "http://192.168.31.23:11434"
+            
+            self.ollamaInput = QLineEdit()
+            self.ollamaInput.setText(self.default_ollama_host)  # 设置默认地址
+            self.ollamaInput.setPlaceholderText("请输入Ollama服务器地址")
+            self.ollamaInput.setStyleSheet("""
+                QLineEdit {
+                    padding: 10px 14px;
+                    border: 2px solid #E0E0E0;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    color: #333333;
+                    background-color: #FAFAFA;
+                }
+                QLineEdit:focus {
+                    border: 2px solid #1976D2;
+                    background-color: white;
+                }
+                QLineEdit::placeholder {
+                    color: #BBBBBB;
+                }
+            """)
+            inputLayout.addWidget(self.ollamaInput)
+            
+            # 应用按钮
+            applyBtn = QPushButton("应用")
+            applyBtn.setCursor(Qt.PointingHandCursor)
+            applyBtn.setMinimumHeight(42)
+            applyBtn.setMinimumWidth(80)
+            applyBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #1976D2;
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    border: none;
+                }
+                QPushButton:hover { background-color: #1565C0; }
+                QPushButton:pressed { background-color: #0D47A1; }
+            """)
+            applyBtn.clicked.connect(self.applyOllamaHost)
+            inputLayout.addWidget(applyBtn)
+            
+            ollamaLayout.addLayout(inputLayout)
+            
+            # 当前地址显示
+            self.currentHostLabel = QLabel(f"当前地址: {self.default_ollama_host}")
+            self.currentHostLabel.setStyleSheet("font-size: 11px; color: #4CAF50; border: none; background: transparent;")
+            ollamaLayout.addWidget(self.currentHostLabel)
+            
+            layout.addWidget(ollamaCard)
+            
+            # ========== 监控日志 ==========
+            logCard = QFrame()
+            logCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
+            logLayout = QVBoxLayout(logCard)
+            logLayout.setContentsMargins(20, 18, 20, 18)
+            logLayout.setSpacing(10)
+            
+            logTitle = QLabel("📋 监控日志")
+            logTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            logLayout.addWidget(logTitle)
+            
+            self.logText = QLabel("等待开始监控...")
+            self.logText.setStyleSheet("""
+                QLabel {
+                    background-color: #F5F5F5;
+                    color: #666666;
+                    padding: 12px;
+                    border-radius: 8px;
+                    font-size: 11px;
+                    font-family: Consolas, monospace;
+                    border: none;
+                }
+            """)
+            self.logText.setWordWrap(True)
+            self.logText.setAlignment(Qt.AlignTop)
+            self.logText.setMinimumHeight(100)
+            logLayout.addWidget(self.logText)
+            
+            layout.addWidget(logCard)
+            
+            # ========== 开始/结束监控按钮 ==========
+            btnCard = QFrame()
+            btnCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
+            btnLayout = QHBoxLayout(btnCard)
+            btnLayout.setContentsMargins(20, 18, 20, 18)
+            btnLayout.setSpacing(15)
+            
+            # 开始监控按钮
+            self.startBtn = QPushButton("▶️ 开始监控")
+            self.startBtn.setCursor(Qt.PointingHandCursor)
+            self.startBtn.setMinimumHeight(50)
+            self.startBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    padding: 12px 30px;
+                    border-radius: 10px;
+                    font-size: 15px;
+                    font-weight: bold;
+                    border: none;
+                }
+                QPushButton:hover { background-color: #43A047; }
+                QPushButton:pressed { background-color: #388E3C; }
+                QPushButton:disabled { background-color: #C8E6C9; color: #A5D6A7; }
+            """)
+            self.startBtn.clicked.connect(self.startMonitoring)
+            btnLayout.addWidget(self.startBtn)
+            
+            # 结束监控按钮
+            self.stopBtn = QPushButton("⏹️ 结束监控")
+            self.stopBtn.setCursor(Qt.PointingHandCursor)
+            self.stopBtn.setMinimumHeight(50)
+            self.stopBtn.setEnabled(False)
+            self.stopBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #F44336;
+                    color: white;
+                    padding: 12px 30px;
+                    border-radius: 10px;
+                    font-size: 15px;
+                    font-weight: bold;
+                    border: none;
+                }
+                QPushButton:hover { background-color: #E53935; }
+                QPushButton:pressed { background-color: #C62828; }
+                QPushButton:disabled { background-color: #FFCDD2; color: #EF9A9A; }
+            """)
+            self.stopBtn.clicked.connect(self.stopMonitoring)
+            btnLayout.addWidget(self.stopBtn)
+            
+            layout.addWidget(btnCard)
+            
+            # 添加弹性空间
+            layout.addStretch()
+            
+            scrollArea.setWidget(contentWidget)
+            mainLayout.addWidget(scrollArea)
+        
+        def selectInterval(self, minutes, btn):
+            """选择监控间隔"""
+            self.selected_interval = minutes
+            
+            # 更新按钮状态
+            for b in self.interval_buttons:
+                b.setChecked(b == btn)
+            
+            print(f"[监控设置] 间隔已选择: {minutes} 分钟")
+        
+        def applyOllamaHost(self):
+            """应用 ollama 服务器地址"""
+            host = self.ollamaInput.text().strip()
+            
+            # 如果输入为空，使用默认地址
+            if not host:
+                host = self.default_ollama_host
+                self.ollamaInput.setText(host)  # 将默认地址填入输入框
+            
+            # 确保地址格式正确
+            if not host.startswith('http://') and not host.startswith('https://'):
+                host = 'http://' + host
+            
+            # 更新地址
+            from screenshot import update_ollama_host
+            update_ollama_host(host)
+            self.currentHostLabel.setText(f"当前地址: {host}")
+            
+            InfoBar.success(
+                title="应用成功",
+                content=f"Ollama 服务器地址已更新为: {host}",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self
+            )
+        
+        def startMonitoring(self):
+            """开始监控"""
+            if self.is_monitoring:
+                return
+            
+            self.is_monitoring = True
+            
+            # 更新按钮状态
+            self.startBtn.setEnabled(False)
+            self.stopBtn.setEnabled(True)
+            
+            # 更新状态标签
+            self.statusBadge.setText(f"🔴 监控中 (每{self.selected_interval}分钟)")
+            self.statusBadge.setStyleSheet("""
+                QLabel {
+                    background-color: #E8F5E9;
+                    color: #2E7D32;
+                    padding: 6px 14px;
+                    border-radius: 12px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    border: none;
+                }
+            """)
+            
+            # 更新日志
+            self.logText.setText(f"[{self.datetime.now().strftime('%H:%M:%S')}] 监控已启动，间隔 {self.selected_interval} 分钟\n等待第一个间隔结束后开始首次分析...")
+            
+            # 启动定时监控
+            start_monitor(
+                interval_minutes=self.selected_interval,
+                callback=self.onMonitorCallback
+            )
+            
+            InfoBar.success(
+                title="监控已启动",
+                content=f"每 {self.selected_interval} 分钟自动截图分析",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self
+            )
+        
+        def stopMonitoring(self):
+            """停止监控"""
+            if not self.is_monitoring:
+                return
+            
+            self.is_monitoring = False
+            
+            # 停止定时监控
+            stop_monitor()
+            
+            # 更新按钮状态
+            self.startBtn.setEnabled(True)
+            self.stopBtn.setEnabled(False)
+            
+            # 更新状态标签
+            self.statusBadge.setText("⏸️ 未监控")
+            self.statusBadge.setStyleSheet("""
+                QLabel {
+                    background-color: #E0E0E0;
+                    color: #666666;
+                    padding: 6px 14px;
+                    border-radius: 12px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    border: none;
+                }
+            """)
+            
+            # 更新日志
+            current_text = self.logText.text()
+            self.logText.setText(current_text + f"\n[{self.datetime.now().strftime('%H:%M:%S')}] 监控已停止")
+            
+            InfoBar.info(
+                title="监控已停止",
+                content="定时截图分析已结束",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self
+            )
+        
+        def onMonitorCallback(self, result, error):
+            """监控回调函数 - 每次截图分析完成后调用"""
+            if error:
+                # 分析失败
+                current_text = self.logText.text()
+                self.logText.setText(current_text + f"\n[{self.datetime.now().strftime('%H:%M:%S')}] ❌ 分析失败: {str(error)}")
+            elif result:
+                # 分析成功
+                work_type = result.get('type', '未知')
+                description = result.get('description', '')
+                current_text = self.logText.text()
+                # 截断描述，避免日志过长
+                short_desc = description[:50] + "..." if len(description) > 50 else description
+                self.logText.setText(current_text + f"\n[{self.datetime.now().strftime('%H:%M:%S')}] ✅ [{work_type}] {short_desc}")
+                
+                # 更新其他页面数据
+                self.main_window.todayPage.updateData()
+                if hasattr(self.main_window, 'recordsPage'):
+                    self.main_window.recordsPage.updateData()
+                if hasattr(self.main_window, 'statsPage'):
+                    self.main_window.statsPage.updateData()
+
     # ==================== 主窗口 ====================
     
     class MainWindow(FluentWindow):
@@ -1341,16 +1782,20 @@ def main():
             super().__init__()
             init_db()
             
+            # 创建所有页面
             self.todayPage = TodayWorkPage(self)
             self.screenshotPage = ScreenshotPage(self, self)
             self.recordsPage = RecordsPage(self)
             self.statsPage = StatsPage(self)
+            self.monitorPage = MonitorPage(self)
             self.settingsPage = SettingsPage(self)
             
+            # 添加导航项
             self.addSubInterface(self.todayPage, FluentIcon.HOME, "今日工作")
             self.addSubInterface(self.screenshotPage, FluentIcon.CAMERA, "截图分析")
             self.addSubInterface(self.recordsPage, FluentIcon.DOCUMENT, "工作记录")
             self.addSubInterface(self.statsPage, FluentIcon.PIE_SINGLE, "数据统计")
+            self.addSubInterface(self.monitorPage, FluentIcon.PLAY, "管理监控")
             self.addSubInterface(self.settingsPage, FluentIcon.SETTING, "设置",
                                 NavigationItemPosition.BOTTOM)
             

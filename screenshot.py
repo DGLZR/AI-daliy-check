@@ -165,7 +165,8 @@ description撰写规则：
             'content': prompt,
             'images': [img_base64]  # 传入base64编码的图像
         }],
-        think=True
+        think=True,
+        keep_alive='1h'
     )
     
     # 解析返回结果
@@ -412,6 +413,199 @@ def get_monitor_info():
         pass
     
     return monitors if monitors else [{'name': '主显示器', 'resolution': '未知', 'scale': '未知', 'refresh_rate': '未知'}]
+
+#定时监控模式的截图识别并存储结果
+def run_and_store_with_interval(interval_minutes):
+    """
+    定时监控模式的截图识别并存储结果
+    
+    与 run_and_store() 的区别：
+    - 本函数用于定时监控模式
+    - 每条记录的持续时长固定为监控间隔时长，而不是距离上次记录的实际时间间隔
+    - 确保每次监控记录的时长统计准确
+    
+    参数：
+        interval_minutes: 监控间隔时长（分钟），如 5、10、15 等
+    
+    返回值：字典，包含识别结果 {'type': '工作类型', 'description': '工作描述'}
+    """
+    from store import init_db, read_summary, read_records, write_summary, write_records, get_next_id, WORK_TYPES
+    
+    # 初始化数据库（确保文件夹和CSV文件存在）
+    init_db()
+    
+    # 获取当前系统时间
+    now = datetime.now()
+    today = now.strftime('%Y-%m-%d')      # 格式：2025-01-15
+    current_time = now.strftime('%H:%M:%S')  # 格式：09:30:00
+    
+    # 调用截图识别函数，获取工作类型和描述
+    result = ollama_recognize()
+    work_type = result['type']          # 工作类型，如"开发"、"沟通"
+    description = result['description'] # 工作描述，如"正在编写Python代码"
+    
+    # 读取现有数据
+    summaries = read_summary()  # 所有日期的汇总数据
+    records = read_records()    # 所有记录
+    
+    # 使用固定的监控间隔时长作为本次记录的持续时长
+    duration_minutes = interval_minutes
+    
+    # 创建新记录
+    new_id = get_next_id(records)  # 获取新ID
+    new_record = {
+        'ID': str(new_id),
+        '日期': today,
+        '时间': current_time,
+        '工作类型': work_type,
+        '工作描述': description,
+        '持续时长(分钟)': f'{duration_minutes:.1f}'  # 固定为监控间隔时长
+    }
+    records.append(new_record)  # 添加到记录列表
+    
+    # 更新每日汇总数据
+    if today in summaries:
+        # 今天已有记录，更新汇总
+        summary = summaries[today]
+        summary['记录条数'] = str(int(summary['记录条数']) + 1)  # 记录数+1
+        summary['最晚使用时间'] = current_time  # 更新最晚使用时间
+        # 更新总使用时长（加上本次时长，转换为小时）
+        summary['使用时长(小时)'] = f"{float(summary['使用时长(小时)']) + duration_minutes / 60:.2f}"
+        # 更新对应工作类型的时长
+        summary[f'{work_type}时长(小时)'] = f"{float(summary[f'{work_type}时长(小时)']) + duration_minutes / 60:.2f}"
+        
+        # 更新主要工作：取时长最长的工作类型
+        type_durations = {t: float(summary[f'{t}时长(小时)']) for t in WORK_TYPES}
+        summary['主要工作'] = max(type_durations, key=type_durations.get)
+        
+        # 更新当前小时的记录条数
+        current_hour = now.strftime('%H')  # 获取当前小时（00-23）
+        hour_key = f'{current_hour}:00记录数'
+        summary[hour_key] = str(int(summary.get(hour_key, '0')) + 1)
+    else:
+        # 今天第一条记录，创建新的汇总
+        summary = {
+            '日期': today,
+            '记录条数': '1',
+            '使用时长(小时)': f'{duration_minutes / 60:.2f}',  # 第一条记录使用监控间隔时长
+            '主要工作': work_type,
+            '最早使用时间': current_time,
+            '最晚使用时间': current_time
+        }
+        # 初始化所有工作类型的时长为0
+        for t in WORK_TYPES:
+            summary[f'{t}时长(小时)'] = '0'
+        # 设置当前工作类型的时长
+        summary[f'{work_type}时长(小时)'] = f'{duration_minutes / 60:.2f}'
+        # 初始化每个小时的记录数为0
+        for h in range(24):
+            summary[f'{h:02d}:00记录数'] = '0'
+        # 设置当前小时的记录数为1
+        current_hour = now.strftime('%H')
+        summary[f'{current_hour}:00记录数'] = '1'
+        summaries[today] = summary
+    
+    # 将更新后的数据写入CSV文件
+    write_summary(summaries)
+    write_records(records)
+    
+    # 打印记录信息
+    print(f"[定时监控] 已记录: [{work_type}] {description} (间隔: {interval_minutes}分钟)")
+    
+    return result
+
+
+# 全局变量：监控定时器引用（防止被垃圾回收）
+_monitor_timer = None
+
+
+def start_monitor(interval_minutes, ollama_host=None, callback=None):
+    """
+    启动定时监控
+    
+    功能：
+    1. 按照指定间隔定时执行截图分析
+    2. 点击开始后，等待第一个间隔结束后才开始第一次截图
+    3. 每次截图记录的时长固定为监控间隔时长
+    4. 支持自定义 ollama 服务器地址
+    
+    参数：
+        interval_minutes: 监控间隔时长（分钟）
+        ollama_host: ollama 服务器地址，默认使用 ollama_recognize 中的配置
+        callback: 回调函数，每次截图分析完成后调用，参数为识别结果字典
+    
+    返回值：无
+    """
+    global _monitor_timer
+    from PyQt5.QtCore import QTimer
+    
+    # 如果设置了自定义 ollama 地址，更新全局配置
+    if ollama_host:
+        update_ollama_host(ollama_host)
+    
+    # 将分钟转换为毫秒
+    interval_ms = interval_minutes * 60 * 1000
+    
+    # 定义定时执行的任务
+    def monitor_task():
+        """定时监控任务"""
+        try:
+            # 执行截图识别并存储，使用固定的监控间隔时长
+            result = run_and_store_with_interval(interval_minutes)
+            # 如果有回调函数，调用它
+            if callback:
+                callback(result, None)
+        except Exception as e:
+            print(f"[定时监控] 截图分析失败: {e}")
+            if callback:
+                callback(None, e)
+    
+    # 创建定时器
+    _monitor_timer = QTimer()
+    _monitor_timer.timeout.connect(monitor_task)
+    _monitor_timer.start(interval_ms)  # 启动定时器，第一个间隔后才开始第一次截图
+    
+    print(f"[定时监控] 已启动，间隔 {interval_minutes} 分钟")
+
+
+def stop_monitor():
+    """
+    停止定时监控
+    
+    功能：停止正在运行的定时监控
+    
+    参数：无
+    返回值：无
+    """
+    global _monitor_timer
+    
+    if _monitor_timer is not None:
+        _monitor_timer.stop()
+        _monitor_timer = None
+        print("[定时监控] 已停止")
+    else:
+        print("[定时监控] 未在运行")
+
+
+def update_ollama_host(host):
+    """
+    更新 ollama 服务器地址
+    
+    功能：修改 ollama_recognize 函数使用的服务器地址
+    
+    参数：
+        host: ollama 服务器地址，如 'http://192.168.1.100:11434'
+    
+    返回值：无
+    """
+    # 使用全局变量存储自定义地址
+    global _custom_ollama_host
+    _custom_ollama_host = host
+    print(f"[配置] ollama 服务器地址已更新为: {host}")
+
+
+# 全局变量：自定义 ollama 地址
+_custom_ollama_host = None
 
 
 # 测试函数

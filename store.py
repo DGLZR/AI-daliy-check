@@ -272,9 +272,7 @@ def print_today_summary():
         # 打印每小时记录数（只显示有记录的小时）
         print("\n每小时记录数:")
         for h in range(24):
-            # 获取当前小时的记录数，如果为空则默认为'0'
-            hour_count = summary.get(f'{h:02d}:00记录数', '0') or '0'
-            count = int(hour_count)
+            count = int(summary.get(f'{h:02d}:00记录数', '0'))
             if count > 0:  # 只显示记录数大于0的小时
                 print(f"  {h:02d}:00 - {count} 条")
     else:
