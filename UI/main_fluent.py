@@ -70,7 +70,8 @@ def main():
                                  QLabel, QFrame, QScrollArea, QCheckBox,
                                  QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
                                  QSizePolicy, QPushButton, QTableWidget, QTableWidgetItem,
-                                 QLineEdit, QDateEdit, QComboBox, QApplication)
+                                 QLineEdit, QDateEdit, QComboBox, QApplication,
+                                 QMessageBox, QSystemTrayIcon, QMenu, QAction, QDialog)
     from PyQt5.QtCore import Qt, QSize, QTimer, QDate, QPropertyAnimation, QEasingCurve, QDateTime, QThread, pyqtSignal
     from PyQt5.QtGui import QFont, QColor, QPixmap, QPainter, QPainterPath, QBrush, QPen, QIcon
     from qfluentwidgets import (FluentWindow, NavigationItemPosition, StrongBodyLabel,
@@ -2202,6 +2203,208 @@ def main():
             self.todayPage.updateData()
             self.recordsPage.updateData()
             self.timelinePage.updateData()  # 更新时间线页面
+            
+            # 设置系统托盘
+            self.setupSystemTray()
+            
+            # 标志是否从托盘恢复
+            self._was_minimized = False
+        
+        def setupSystemTray(self):
+            """设置系统托盘图标和菜单"""
+            # 创建系统托盘图标
+            self.trayIcon = QSystemTrayIcon(self)
+            
+            # 创建简单的程序图标（绿色圆形）
+            pixmap = QPixmap(32, 32)
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setBrush(QBrush(QColor("#4CAF50")))
+            painter.setPen(QPen(QColor("#388E3C"), 2))
+            painter.drawEllipse(2, 2, 28, 28)
+            painter.setPen(QColor(Qt.white))
+            painter.setFont(QFont("Arial", 14, QFont.Bold))
+            painter.drawText(pixmap.rect(), Qt.AlignCenter, "W")
+            painter.end()
+            
+            self.trayIcon.setIcon(QIcon(pixmap))
+            
+            # 创建托盘菜单
+            trayMenu = QMenu()
+            
+            # 显示主窗口动作
+            showAction = QAction("显示主窗口", self)
+            showAction.triggered.connect(self.showMainWindow)
+            trayMenu.addAction(showAction)
+            
+            trayMenu.addSeparator()
+            
+            # 退出动作
+            quitAction = QAction("退出", self)
+            quitAction.triggered.connect(self.quitApplication)
+            trayMenu.addAction(quitAction)
+            
+            # 设置托盘菜单
+            self.trayIcon.setContextMenu(trayMenu)
+            
+            # 双击托盘图标显示主窗口
+            self.trayIcon.activated.connect(self.trayIconActivated)
+        
+        def trayIconActivated(self, reason):
+            """处理托盘图标激活事件"""
+            if reason == QSystemTrayIcon.DoubleClick:
+                self.showMainWindow()
+        
+        def showMainWindow(self):
+            """显示主窗口"""
+            self.showNormal()
+            self.activateWindow()
+            self.raise_()
+        
+        def quitApplication(self):
+            """退出应用程序"""
+            # 停止监控
+            stop_monitor()
+            # 退出应用
+            QApplication.quit()
+        
+        def closeEvent(self, event):
+            """处理关闭事件 - 弹窗提示用户选择最小化或关闭"""
+            # 忽略默认关闭事件
+            event.ignore()
+            
+            # 创建自定义 Fluent 风格对话框
+            dialog = QDialog(self)
+            dialog.setWindowTitle(" ")
+            dialog.setFixedSize(380, 220)
+            dialog.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+            dialog.setAttribute(Qt.WA_TranslucentBackground)
+            
+            # 主容器
+            mainWidget = QWidget(dialog)
+            mainWidget.setGeometry(10, 10, 360, 200)
+            mainWidget.setStyleSheet("""
+                QWidget {
+                    background-color: white;
+                    border-radius: 12px;
+                    border: 1px solid #E0E0E0;
+                }
+            """)
+            
+            # 添加阴影效果
+            shadow = QGraphicsDropShadowEffect(dialog)
+            shadow.setBlurRadius(20)
+            shadow.setXOffset(0)
+            shadow.setYOffset(4)
+            shadow.setColor(QColor(0, 0, 0, 50))
+            mainWidget.setGraphicsEffect(shadow)
+            
+            # 布局
+            layout = QVBoxLayout(mainWidget)
+            layout.setContentsMargins(24, 20, 24, 20)
+            layout.setSpacing(16)
+            
+            # 标题
+            titleLabel = QLabel("👋 确认操作", mainWidget)
+            titleLabel.setStyleSheet("font-size: 16px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            layout.addWidget(titleLabel)
+            
+            # 描述文本
+            descLabel = QLabel("请选择您要执行的操作：", mainWidget)
+            descLabel.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
+            layout.addWidget(descLabel)
+            
+            # 按钮容器
+            btnLayout = QHBoxLayout()
+            btnLayout.setSpacing(12)
+            
+            # 最小化到任务栏按钮
+            minimizeBtn = QPushButton("🌙 最小化到任务栏", mainWidget)
+            minimizeBtn.setCursor(Qt.PointingHandCursor)
+            minimizeBtn.setMinimumHeight(40)
+            minimizeBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #43A047;
+                }
+                QPushButton:pressed {
+                    background-color: #388E3C;
+                }
+            """)
+            minimizeBtn.clicked.connect(lambda: dialog.done(1))
+            btnLayout.addWidget(minimizeBtn)
+            
+            # 直接退出按钮
+            closeBtn = QPushButton("🚪 直接退出", mainWidget)
+            closeBtn.setCursor(Qt.PointingHandCursor)
+            closeBtn.setMinimumHeight(40)
+            closeBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #F44336;
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #E53935;
+                }
+                QPushButton:pressed {
+                    background-color: #C62828;
+                }
+            """)
+            closeBtn.clicked.connect(lambda: dialog.done(2))
+            btnLayout.addWidget(closeBtn)
+            
+            layout.addLayout(btnLayout)
+            
+            # 取消按钮（文字按钮）
+            cancelBtn = QPushButton("取消", mainWidget)
+            cancelBtn.setCursor(Qt.PointingHandCursor)
+            cancelBtn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    color: #999999;
+                    padding: 4px 8px;
+                    border: none;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    color: #666666;
+                }
+            """)
+            cancelBtn.clicked.connect(lambda: dialog.done(0))
+            layout.addWidget(cancelBtn, 0, Qt.AlignCenter)
+            
+            # 显示对话框并获取结果
+            result = dialog.exec_()
+            
+            # 根据用户选择执行操作
+            if result == 1:
+                # 最小化到系统托盘
+                self.hide()
+                self.trayIcon.show()
+                self.trayIcon.showMessage(
+                    "工作日报助手",
+                    "程序已最小化到任务栏，双击图标可恢复窗口",
+                    QSystemTrayIcon.Information,
+                    2000
+                )
+            elif result == 2:
+                # 直接退出
+                self.quitApplication()
+            # 如果点击取消，不做任何操作
         
         def changeEvent(self, event):
             """处理窗口状态变化事件"""
@@ -2228,6 +2431,9 @@ def main():
             return super().event(event)
 
     # ==================== 启动应用 ====================
+    
+    # 设置应用程序在关闭最后一个窗口时不退出（用于最小化到托盘）
+    app.setQuitOnLastWindowClosed(False)
     
     window = MainWindow()
     window.show()
