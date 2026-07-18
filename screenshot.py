@@ -22,6 +22,42 @@ _custom_ollama_model = None
 # 是否使用GLM
 _use_glm = False
 
+# 测试模式（启用后保存截图）
+_test_mode = False
+
+
+def set_test_mode(enabled):
+    """设置测试模式"""
+    global _test_mode
+    _test_mode = enabled
+    if enabled:
+        # 创建photo文件夹
+        photo_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'photo')
+        os.makedirs(photo_dir, exist_ok=True)
+
+
+def is_test_mode():
+    """获取测试模式状态"""
+    return _test_mode
+
+
+def save_screenshot(img, record_id):
+    """保存截图到photo文件夹"""
+    if not _test_mode:
+        return
+    
+    photo_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'photo')
+    os.makedirs(photo_dir, exist_ok=True)
+    
+    # 生成文件名: ID_日期_时间.png
+    now = datetime.now()
+    filename = f"{record_id}_{now.strftime('%Y%m%d')}_{now.strftime('%H%M%S')}.png"
+    filepath = os.path.join(photo_dir, filename)
+    
+    # 保存图片
+    cv2.imwrite(filepath, img)
+    print(f"[测试模式] 截图已保存: {filename}")
+
 
 def set_use_glm(use_glm):
     """设置是否使用GLM"""
@@ -487,6 +523,11 @@ def run_and_store():
     }
     records.append(new_record)  # 添加到记录列表
     
+    # 测试模式：保存截图
+    if _test_mode:
+        img = capture_screen()
+        save_screenshot(img, new_id)
+    
     # 更新每日汇总数据
     if today in summaries:
         # 今天已有记录，更新汇总
@@ -584,6 +625,11 @@ def run_and_store_with_interval(interval_minutes):
         '持续时长(分钟)': f'{duration_minutes:.1f}'  # 固定为监控间隔时长
     }
     records.append(new_record)  # 添加到记录列表
+    
+    # 测试模式：保存截图
+    if _test_mode:
+        img = capture_screen()
+        save_screenshot(img, new_id)
     
     # 更新每日汇总数据
     if today in summaries:

@@ -81,7 +81,7 @@ def main():
                                 FluentIcon, ComboBox, CalendarPicker, SearchLineEdit,
                                 InfoBar, InfoBarPosition, ToolButton, FluentIconBase)
     from store import init_db, get_daily_summary, get_daily_records, read_records
-    from screenshot import run_and_store, get_today_stats, get_monitor_info, start_monitor, stop_monitor, set_use_glm, set_ollama_config, test_glm_connection, test_ollama_connection
+    from screenshot import run_and_store, get_today_stats, get_monitor_info, start_monitor, stop_monitor, set_use_glm, set_ollama_config, test_glm_connection, test_ollama_connection, set_test_mode, is_test_mode
     from datetime import datetime, timedelta
 
     # ==================== 工具函数 ====================
@@ -549,12 +549,12 @@ def main():
                     bg_color = "#F0F0F0"
                     text_color = "#CCCCCC"
                 else:
-                    # 从浅灰色渐变到深绿色
-                    # 浅灰色: rgb(240, 240, 240)
-                    # 深绿色: rgb(46, 125, 50)
-                    r = int(240 - (240 - 46) * intensity)
-                    g = int(240 - (240 - 125) * intensity)
-                    b = int(240 - (240 - 50) * intensity)
+                    # 有记录：从白色渐变到绿色
+                    # 白色: rgb(255, 255, 255)
+                    # 深绿色: rgb(34, 139, 34)
+                    r = int(255 - (255 - 34) * intensity)
+                    g = int(255 - (255 - 139) * intensity)
+                    b = int(255 - (255 - 34) * intensity)
                     bg_color = f"rgb({r}, {g}, {b})"
                     # 文字颜色：浅色背景用深色字，深色背景用白色字
                     text_color = "#FFFFFF" if intensity > 0.5 else "#333333"
@@ -801,7 +801,7 @@ def main():
     # ==================== 工作记录页面 ====================
     
     class RecordsPage(QWidget):
-        """工作记录页面 - 优化版"""
+        """工作记录页面 - Fluent Design 风格"""
         def __init__(self, parent=None):
             super().__init__(parent)
             self.setObjectName("recordsPage")
@@ -872,43 +872,21 @@ def main():
             tableCard = QFrame()
             tableCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
             tableLayout = QVBoxLayout(tableCard)
-            tableLayout.setContentsMargins(12, 12, 12, 12)
+            tableLayout.setContentsMargins(15, 15, 15, 15)
             
-            self.recordsTable = QTableWidget()
+            # 使用 TableWidget (Fluent Design)
+            self.recordsTable = TableWidget(self)
+            self.recordsTable.setBorderRadius(8)
+            self.recordsTable.setBorderVisible(True)
             self.recordsTable.setColumnCount(5)
-            self.recordsTable.setHorizontalHeaderLabels(["ID", "时间", "类型", "描述", "时长"])
+            self.recordsTable.setHorizontalHeaderLabels(["序号", "时间", "类型", "描述", "时长"])
             self.recordsTable.horizontalHeader().setStretchLastSection(True)
-            self.recordsTable.setColumnWidth(0, 50)
-            self.recordsTable.setColumnWidth(1, 100)
+            self.recordsTable.setColumnWidth(0, 60)
+            self.recordsTable.setColumnWidth(1, 120)
             self.recordsTable.setColumnWidth(2, 80)
-            self.recordsTable.setColumnWidth(3, 400)
+            self.recordsTable.setColumnWidth(3, 450)
             self.recordsTable.setColumnWidth(4, 80)
             self.recordsTable.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            self.recordsTable.setStyleSheet("""
-                QTableWidget {
-                    background-color: white;
-                    border: none;
-                    gridline-color: #F0F0F0;
-                    font-size: 12px;
-                }
-                QTableWidget::item {
-                    padding: 8px;
-                    border-bottom: 1px solid #F5F5F5;
-                }
-                QTableWidget::item:selected {
-                    background-color: #E3F2FD;
-                    color: #1a1a1a;
-                }
-                QHeaderView::section {
-                    background-color: #FAFAFA;
-                    color: #333333;
-                    padding: 10px;
-                    border: none;
-                    border-bottom: 2px solid #4CAF50;
-                    font-weight: bold;
-                    font-size: 12px;
-                }
-            """)
             self.recordsTable.setSelectionBehavior(QTableWidget.SelectRows)
             self.recordsTable.setAlternatingRowColors(True)
             
@@ -919,14 +897,18 @@ def main():
             mainLayout.addWidget(scrollArea)
         
         def updateData(self):
-            """更新记录数据"""
+            """更新记录数据（按时间倒序排列）"""
             records = get_daily_records()
+            
+            # 按时间倒序排列（最近的在前面）
+            records.sort(key=lambda r: r.get('时间', ''), reverse=True)
+            
             self.recordsTable.setRowCount(len(records))
             self.countLabel.setText(f"📊 共 {len(records)} 条记录")
             
             for row, record in enumerate(records):
-                # ID
-                idItem = QTableWidgetItem(record['ID'])
+                # 序号
+                idItem = QTableWidgetItem(str(row + 1))
                 idItem.setTextAlignment(Qt.AlignCenter)
                 self.recordsTable.setItem(row, 0, idItem)
                 
@@ -935,13 +917,14 @@ def main():
                 timeItem.setTextAlignment(Qt.AlignCenter)
                 self.recordsTable.setItem(row, 1, timeItem)
                 
-                # 类型 - 带颜色标签
+                # 类型
                 typeItem = QTableWidgetItem(record['工作类型'])
                 typeItem.setTextAlignment(Qt.AlignCenter)
                 self.recordsTable.setItem(row, 2, typeItem)
                 
                 # 描述
-                self.recordsTable.setItem(row, 3, QTableWidgetItem(record['工作描述']))
+                descItem = QTableWidgetItem(record['工作描述'])
+                self.recordsTable.setItem(row, 3, descItem)
                 
                 # 时长
                 duration = record.get('持续时长(分钟)', '0')
@@ -973,6 +956,100 @@ def main():
         "数据分析": "#673AB7", # 深紫色
         "其他": "#607D8B",    # 灰蓝色
     }
+    
+    class PieChartWidget(QWidget):
+        """饼状图组件"""
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.data = []  # [(name, value, color), ...]
+            self.show_percentage = True  # True=显示占比, False=显示时长
+            self.setMinimumSize(200, 200)
+        
+        def setData(self, data):
+            """设置数据: [(name, value, color), ...]"""
+            self.data = data
+            self.update()  # 触发重绘
+        
+        def setShowPercentage(self, show_percentage):
+            """设置是否显示占比"""
+            self.show_percentage = show_percentage
+            self.update()  # 触发重绘
+        
+        def paintEvent(self, event):
+            """绘制饼状图"""
+            if not self.data:
+                return
+            
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            # 计算可用区域
+            width = self.width()
+            height = self.height()
+            
+            # 饼图区域（左侧）
+            pie_size = min(width * 0.6, height * 0.9)
+            pie_x = 20
+            pie_y = (height - pie_size) / 2
+            
+            # 计算总值
+            total = sum(item[1] for item in self.data)
+            if total == 0:
+                painter.end()
+                return
+            
+            # 绘制饼图
+            start_angle = 0
+            for name, value, color in self.data:
+                if value <= 0:
+                    continue
+                
+                # 计算角度
+                angle = int(360 * 16 * value / total)  # Qt使用1/16度为单位
+                
+                # 设置画刷
+                painter.setBrush(QColor(color))
+                painter.setPen(QPen(QColor("#FFFFFF"), 2))
+                
+                # 绘制扇形
+                painter.drawPie(int(pie_x), int(pie_y), int(pie_size), int(pie_size), 
+                               start_angle, angle)
+                
+                start_angle += angle
+            
+            # 绘制图例（右侧）
+            legend_x = pie_x + pie_size + 20
+            legend_y = pie_y + 10
+            legend_spacing = 22
+            
+            for i, (name, value, color) in enumerate(self.data):
+                if value <= 0:
+                    continue
+                
+                y = legend_y + i * legend_spacing
+                percentage = (value / total * 100) if total > 0 else 0
+                hours = value / 60  # 转换为小时
+                
+                # 绘制颜色方块
+                painter.setBrush(QColor(color))
+                painter.setPen(Qt.NoPen)
+                painter.drawRoundedRect(int(legend_x), int(y), 12, 12, 2, 2)
+                
+                # 绘制文字
+                painter.setPen(QColor("#333333"))
+                font = QFont("Microsoft YaHei", 9)
+                painter.setFont(font)
+                
+                # 根据模式显示时长或占比
+                if self.show_percentage:
+                    value_text = f"{percentage:.1f}%"
+                else:
+                    value_text = f"{hours:.1f}h"
+                
+                painter.drawText(int(legend_x + 18), int(y + 10), 
+                               f"{name} {value_text}")
+            
+            painter.end()
     
     class TimelinePage(QWidget):
         """工作时间线页面 - 替代数据统计页面"""
@@ -1117,21 +1194,65 @@ def main():
             distLayout.setContentsMargins(20, 15, 20, 15)
             distLayout.setSpacing(12)
             
-            # 标题栏
+            # 标题栏（含切换按钮）
             distHeaderLayout = QHBoxLayout()
             distTitle = QLabel("📊 分类时长分布")
             distTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
             distHeaderLayout.addWidget(distTitle)
             distHeaderLayout.addStretch()
+            
+            # 切换按钮样式
+            btnStyle = """
+                QPushButton {
+                    background-color: #E3F2FD;
+                    color: #1976D2;
+                    padding: 5px 12px;
+                    border-radius: 15px;
+                    font-size: 11px;
+                    border: none;
+                }
+                QPushButton:hover { background-color: #BBDEFB; }
+            """
+            
+            # 时长/占比切换按钮
+            self.distValueBtn = QPushButton("⏱️ 时长")
+            self.distValueBtn.setCursor(Qt.PointingHandCursor)
+            self.distValueBtn.setStyleSheet(btnStyle)
+            self.distValueBtn.clicked.connect(self.toggleDistValueMode)
+            distHeaderLayout.addWidget(self.distValueBtn)
+            
+            # 饼状图/条形图切换按钮
+            self.distModeBtn = QPushButton("🥧 条形图")
+            self.distModeBtn.setCursor(Qt.PointingHandCursor)
+            self.distModeBtn.setStyleSheet(btnStyle)
+            self.distModeBtn.clicked.connect(self.toggleDistMode)
+            distHeaderLayout.addWidget(self.distModeBtn)
+            
             distLayout.addLayout(distHeaderLayout)
             
-            # 分类列表容器
-            self.distContainer = QWidget()
-            self.distContainer.setStyleSheet("border: none; background: transparent;")
-            self.distListLayout = QVBoxLayout(self.distContainer)
+            # 当前显示模式（False=条形图, True=饼状图）
+            self.is_pie_mode = False
+            # 当前数值模式（False=时长, True=占比）
+            self.is_percentage_mode = False
+            
+            # 条形容器
+            self.barContainer = QWidget()
+            self.barContainer.setStyleSheet("border: none; background: transparent;")
+            self.distListLayout = QVBoxLayout(self.barContainer)
             self.distListLayout.setSpacing(8)
             self.distListLayout.setContentsMargins(0, 0, 0, 0)
-            distLayout.addWidget(self.distContainer)
+            distLayout.addWidget(self.barContainer)
+            
+            # 饼状图容器
+            self.pieContainer = QWidget()
+            self.pieContainer.setStyleSheet("border: none; background: transparent;")
+            self.pieContainer.setVisible(False)
+            self.pieLayout = QVBoxLayout(self.pieContainer)
+            self.pieLayout.setContentsMargins(0, 0, 0, 0)
+            self.pieChart = PieChartWidget()
+            self.pieChart.setMinimumHeight(250)
+            self.pieLayout.addWidget(self.pieChart)
+            distLayout.addWidget(self.pieContainer)
             
             layout.addWidget(self.distCard)
             
@@ -1198,6 +1319,37 @@ def main():
         def toggleDistribution(self, state):
             """切换分类时长分布显示"""
             self.distCard.setVisible(state == Qt.Checked)
+        
+        def toggleDistMode(self):
+            """切换条形图/饼状图模式"""
+            self.is_pie_mode = not self.is_pie_mode
+            
+            if self.is_pie_mode:
+                self.distModeBtn.setText("📊 饼状图")
+                self.barContainer.setVisible(False)
+                self.pieContainer.setVisible(True)
+            else:
+                self.distModeBtn.setText("🥧 条形图")
+                self.barContainer.setVisible(True)
+                self.pieContainer.setVisible(False)
+            
+            # 刷新数据
+            self.updateDistribution()
+        
+        def toggleDistValueMode(self):
+            """切换时长/占比显示模式"""
+            self.is_percentage_mode = not self.is_percentage_mode
+            
+            if self.is_percentage_mode:
+                self.distValueBtn.setText("📈 占比")
+            else:
+                self.distValueBtn.setText("⏱️ 时长")
+            
+            # 更新饼状图显示模式
+            self.pieChart.setShowPercentage(self.is_percentage_mode)
+            
+            # 刷新数据
+            self.updateDistribution()
         
         def quickFilter(self, timeText):
             """快速时间筛选"""
@@ -1308,12 +1460,6 @@ def main():
         
         def updateDistribution(self):
             """更新分类时长分布"""
-            # 清空旧内容
-            while self.distListLayout.count():
-                child = self.distListLayout.takeAt(0)
-                if child.widget():
-                    child.widget().deleteLater()
-            
             # 统计各类型时长
             type_hours = {}
             total_minutes = 0
@@ -1328,6 +1474,13 @@ def main():
             
             # 按时长排序
             sorted_types = sorted(type_hours.items(), key=lambda x: x[1], reverse=True)
+            
+            # 更新条形图
+            # 清空旧内容
+            while self.distListLayout.count():
+                child = self.distListLayout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
             
             # 创建进度条
             for work_type, minutes in sorted_types:
@@ -1371,14 +1524,25 @@ def main():
                 
                 rowLayout.addWidget(progressBg, 1)
                 
-                # 时长文本
-                timeLabel = QLabel(f"{hours:.1f}h")
+                # 时长/占比文本
+                if self.is_percentage_mode:
+                    valueText = f"{percentage:.1f}%"
+                else:
+                    valueText = f"{hours:.1f}h"
+                timeLabel = QLabel(valueText)
                 timeLabel.setFixedWidth(50)
                 timeLabel.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 timeLabel.setStyleSheet("font-size: 12px; color: #999999; border: none; background: transparent;")
                 rowLayout.addWidget(timeLabel)
                 
                 self.distListLayout.addWidget(rowWidget)
+            
+            # 更新饼状图
+            pie_data = []
+            for work_type, minutes in sorted_types:
+                color = TYPE_COLORS.get(work_type, "#607D8B")
+                pie_data.append((work_type, minutes, color))
+            self.pieChart.setData(pie_data)
         
         def updateTimeline(self):
             """更新时间轴列表"""
@@ -1740,41 +1904,43 @@ def main():
             
             layout.addWidget(modelCard)
             
-            # ========== 数据存储 ==========
-            dataCard = QFrame()
-            dataCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
-            dataLayout = QVBoxLayout(dataCard)
-            dataLayout.setContentsMargins(20, 18, 20, 18)
-            dataLayout.setSpacing(10)
+            # ========== 测试模式 ==========
+            testCard = QFrame()
+            testCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
+            testLayout = QVBoxLayout(testCard)
+            testLayout.setContentsMargins(20, 18, 20, 18)
+            testLayout.setSpacing(10)
             
-            dataTitle = QLabel("💾 数据存储")
-            dataTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
-            dataLayout.addWidget(dataTitle)
+            testTitle = QLabel("🧪 测试模式")
+            testTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            testLayout.addWidget(testTitle)
             
-            pathInfo = QLabel("存储路径")
-            pathInfo.setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;")
-            dataLayout.addWidget(pathInfo)
+            testInfo = QLabel("启用后将保存每次截图分析的图片到 data/photo 文件夹")
+            testInfo.setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;")
+            testInfo.setWordWrap(True)
+            testLayout.addWidget(testInfo)
             
-            dataPath = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
-            pathLabel = QLabel(dataPath)
-            pathLabel.setStyleSheet("color: #333333; font-size: 11px; border: none; background: transparent;")
-            pathLabel.setWordWrap(True)
-            pathLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            dataLayout.addWidget(pathLabel)
+            # 测试模式开关
+            testSwitchLayout = QHBoxLayout()
+            testSwitchLabel = QLabel("启用测试模式:")
+            testSwitchLabel.setStyleSheet("font-size: 12px; color: #333333; border: none; background: transparent;")
+            testSwitchLayout.addWidget(testSwitchLabel)
             
-            filesLabel = QLabel("数据文件:")
-            filesLabel.setStyleSheet("color: #666666; font-size: 11px; border: none; background: transparent;")
-            dataLayout.addWidget(filesLabel)
+            self.testSwitch = QCheckBox()
+            self.testSwitch.setChecked(is_test_mode())
+            self.testSwitch.stateChanged.connect(self.onTestModeChanged)
+            testSwitchLayout.addWidget(self.testSwitch)
+            testSwitchLayout.addStretch()
             
-            filesList = QLabel(
-                "• daily_summary.csv - 每日汇总数据\n"
-                "• records.csv - 截图分析记录"
-            )
-            filesList.setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;")
-            filesList.setWordWrap(True)
-            dataLayout.addWidget(filesList)
+            testLayout.addLayout(testSwitchLayout)
             
-            layout.addWidget(dataCard)
+            # 测试模式状态
+            self.testStatusLabel = QLabel("")
+            self.testStatusLabel.setStyleSheet("font-size: 11px; border: none; background: transparent;")
+            testLayout.addWidget(self.testStatusLabel)
+            self.updateTestStatus()
+            
+            layout.addWidget(testCard)
             
             # ========== 关于 ==========
             aboutCard = QFrame()
@@ -1860,6 +2026,46 @@ def main():
             else:
                 self.ollamaStatusLabel.setText(f"❌ {message}")
                 self.ollamaStatusLabel.setStyleSheet("color: #F44336; font-size: 11px; border: none; background: transparent;")
+        
+        def onTestModeChanged(self, state):
+            """测试模式开关变化"""
+            enabled = state == Qt.Checked
+            set_test_mode(enabled)
+            self.updateTestStatus()
+            
+            if enabled:
+                InfoBar.success(
+                    title="测试模式已启用",
+                    content="截图将保存到 data/photo 文件夹",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+            else:
+                InfoBar.info(
+                    title="测试模式已关闭",
+                    content="截图将不再保存",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+        
+        def updateTestStatus(self):
+            """更新测试模式状态显示"""
+            if is_test_mode():
+                photo_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'photo')
+                file_count = 0
+                if os.path.exists(photo_dir):
+                    file_count = len([f for f in os.listdir(photo_dir) if f.endswith('.png')])
+                self.testStatusLabel.setText(f"✅ 已启用 - 已保存 {file_count} 张截图")
+                self.testStatusLabel.setStyleSheet("color: #4CAF50; font-size: 11px; border: none; background: transparent;")
+            else:
+                self.testStatusLabel.setText("⏸️ 未启用")
+                self.testStatusLabel.setStyleSheet("color: #999999; font-size: 11px; border: none; background: transparent;")
         
         def onScaleChanged(self, text):
             global SCALE_FACTOR
@@ -2256,10 +2462,10 @@ def main():
             
             # 添加导航项
             self.addSubInterface(self.todayPage, FluentIcon.HOME, "今日工作")
-            self.addSubInterface(self.screenshotPage, FluentIcon.CAMERA, "截图分析")
-            self.addSubInterface(self.recordsPage, FluentIcon.DOCUMENT, "工作记录")
-            self.addSubInterface(self.timelinePage, FluentIcon.PIE_SINGLE, "工作时间线")  # 替换为工作时间线
+            self.addSubInterface(self.timelinePage, FluentIcon.PIE_SINGLE, "工作时间线")
             self.addSubInterface(self.monitorPage, FluentIcon.PLAY, "管理监控")
+            self.addSubInterface(self.recordsPage, FluentIcon.DOCUMENT, "工作记录")
+            self.addSubInterface(self.screenshotPage, FluentIcon.CAMERA, "截图分析（内测）")
             self.addSubInterface(self.settingsPage, FluentIcon.SETTING, "设置",
                                 NavigationItemPosition.BOTTOM)
             
