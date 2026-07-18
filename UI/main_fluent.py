@@ -2283,20 +2283,27 @@ def main():
             # 创建系统托盘图标
             self.trayIcon = QSystemTrayIcon(self)
             
-            # 创建简单的程序图标（绿色圆形）
-            pixmap = QPixmap(32, 32)
-            pixmap.fill(Qt.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.setBrush(QBrush(QColor("#4CAF50")))
-            painter.setPen(QPen(QColor("#388E3C"), 2))
-            painter.drawEllipse(2, 2, 28, 28)
-            painter.setPen(QColor(Qt.white))
-            painter.setFont(QFont("Arial", 14, QFont.Bold))
-            painter.drawText(pixmap.rect(), Qt.AlignCenter, "W")
-            painter.end()
-            
-            self.trayIcon.setIcon(QIcon(pixmap))
+            # 使用指定的图片作为图标
+            icon_path = r"C:\Users\20057\Desktop\微信图片_20240925102439.jpg"
+            if os.path.exists(icon_path):
+                # 加载图片并缩放为图标大小
+                pixmap = QPixmap(icon_path)
+                pixmap = pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.trayIcon.setIcon(QIcon(pixmap))
+            else:
+                # 如果图片不存在，使用默认图标
+                pixmap = QPixmap(32, 32)
+                pixmap.fill(Qt.transparent)
+                painter = QPainter(pixmap)
+                painter.setRenderHint(QPainter.Antialiasing)
+                painter.setBrush(QBrush(QColor("#4CAF50")))
+                painter.setPen(QPen(QColor("#388E3C"), 2))
+                painter.drawEllipse(2, 2, 28, 28)
+                painter.setPen(QColor(Qt.white))
+                painter.setFont(QFont("Arial", 14, QFont.Bold))
+                painter.drawText(pixmap.rect(), Qt.AlignCenter, "W")
+                painter.end()
+                self.trayIcon.setIcon(QIcon(pixmap))
             
             # 创建托盘菜单
             trayMenu = QMenu()
@@ -2318,6 +2325,9 @@ def main():
             
             # 双击托盘图标显示主窗口
             self.trayIcon.activated.connect(self.trayIconActivated)
+            
+            # 立即显示托盘图标（程序启动时就在任务栏常驻）
+            self.trayIcon.show()
         
         def trayIconActivated(self, reason):
             """处理托盘图标激活事件"""
