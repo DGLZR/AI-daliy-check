@@ -75,9 +75,10 @@ def main():
     from PyQt5.QtGui import QFont, QColor, QPixmap, QPainter, QPainterPath, QBrush, QPen, QIcon
     from qfluentwidgets import (FluentWindow, NavigationItemPosition, StrongBodyLabel,
                                 TitleLabel, SubtitleLabel, BodyLabel, CaptionLabel,
-                                PrimaryPushButton, TransparentPushButton,
+                                PrimaryPushButton, TransparentPushButton, PillPushButton,
                                 SimpleCardWidget, HeaderCardWidget, TableWidget,
-                                FluentIcon, ComboBox, InfoBar, InfoBarPosition)
+                                FluentIcon, ComboBox, CalendarPicker, SearchLineEdit,
+                                InfoBar, InfoBarPosition, ToolButton, FluentIconBase)
     from store import init_db, get_daily_summary, get_daily_records, read_records
     from screenshot import run_and_store, get_today_stats, get_monitor_info, start_monitor, stop_monitor
     from datetime import datetime, timedelta
@@ -958,66 +959,34 @@ def main():
             filterLayout.setContentsMargins(15, 12, 15, 12)
             filterLayout.setSpacing(12)
             
-            # 日期选择 - 开始日期
-            self.startDateEdit = QDateEdit()
-            self.startDateEdit.setCalendarPopup(True)
-            self.startDateEdit.setDate(QDate.currentDate())
-            self.startDateEdit.setDisplayFormat("yyyy/MM/dd")
-            self.startDateEdit.setStyleSheet("""
-                QDateEdit {
-                    padding: 6px 10px;
-                    border: 1px solid #E0E0E0;
-                    border-radius: 6px;
-                    font-size: 12px;
-                    color: #333333;
-                    background-color: white;
-                }
-                QDateEdit:hover { border: 1px solid #1976D2; }
-            """)
-            self.startDateEdit.dateChanged.connect(self.updateData)
-            filterLayout.addWidget(self.startDateEdit)
+            # 日期选择 - 开始日期（使用 Fluent CalendarPicker）
+            self.startDatePicker = CalendarPicker()
+            self.startDatePicker.setDate(QDate.currentDate())
+            self.startDatePicker.setDateFormat("yyyy/MM/dd")
+            self.startDatePicker.setFixedWidth(140)
+            self.startDatePicker.dateChanged.connect(self.updateData)
+            filterLayout.addWidget(self.startDatePicker)
             
             # "至" 文本
             toLabel = QLabel("至")
             toLabel.setStyleSheet("color: #666666; font-size: 12px; border: none; background: transparent;")
             filterLayout.addWidget(toLabel)
             
-            # 日期选择 - 结束日期
-            self.endDateEdit = QDateEdit()
-            self.endDateEdit.setCalendarPopup(True)
-            self.endDateEdit.setDate(QDate.currentDate())
-            self.endDateEdit.setDisplayFormat("yyyy/MM/dd")
-            self.endDateEdit.setStyleSheet("""
-                QDateEdit {
-                    padding: 6px 10px;
-                    border: 1px solid #E0E0E0;
-                    border-radius: 6px;
-                    font-size: 12px;
-                    color: #333333;
-                    background-color: white;
-                }
-                QDateEdit:hover { border: 1px solid #1976D2; }
-            """)
-            self.endDateEdit.dateChanged.connect(self.updateData)
-            filterLayout.addWidget(self.endDateEdit)
+            # 日期选择 - 结束日期（使用 Fluent CalendarPicker）
+            self.endDatePicker = CalendarPicker()
+            self.endDatePicker.setDate(QDate.currentDate())
+            self.endDatePicker.setDateFormat("yyyy/MM/dd")
+            self.endDatePicker.setFixedWidth(140)
+            self.endDatePicker.dateChanged.connect(self.updateData)
+            filterLayout.addWidget(self.endDatePicker)
             
             filterLayout.addStretch()
             
-            # 搜索框
-            self.searchInput = QLineEdit()
-            self.searchInput.setPlaceholderText("🔍 搜索活动...")
-            self.searchInput.setStyleSheet("""
-                QLineEdit {
-                    padding: 6px 12px;
-                    border: 1px solid #E0E0E0;
-                    border-radius: 6px;
-                    font-size: 12px;
-                    color: #333333;
-                    background-color: #FAFAFA;
-                    min-width: 180px;
-                }
-                QLineEdit:focus { border: 1px solid #1976D2; background-color: white; }
-            """)
+            # 搜索框（使用 Fluent SearchLineEdit）
+            self.searchInput = SearchLineEdit()
+            self.searchInput.setPlaceholderText("搜索活动...")
+            self.searchInput.setClearButtonEnabled(True)
+            self.searchInput.setFixedWidth(200)
             self.searchInput.textChanged.connect(self.filterTimeline)
             filterLayout.addWidget(self.searchInput)
             
@@ -1134,56 +1103,28 @@ def main():
             toolbarTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
             toolbarLayout.addWidget(toolbarTitle)
             
-            # 标签筛选下拉框
-            self.tagFilterCombo = QComboBox()
+            # 标签筛选下拉框（使用 Fluent ComboBox）
+            self.tagFilterCombo = ComboBox()
             self.tagFilterCombo.addItems(["全部标签", "开发", "沟通", "生活", "学习", "设计", "管理", "文档", "娱乐", "其他"])
-            self.tagFilterCombo.setStyleSheet("""
-                QComboBox {
-                    padding: 5px 10px;
-                    border: 1px solid #E0E0E0;
-                    border-radius: 6px;
-                    font-size: 11px;
-                    color: #333333;
-                    background-color: white;
-                    min-width: 80px;
-                }
-            """)
+            self.tagFilterCombo.setCurrentIndex(0)
+            self.tagFilterCombo.setFixedWidth(100)
             self.tagFilterCombo.currentTextChanged.connect(self.filterTimeline)
             toolbarLayout.addWidget(self.tagFilterCombo)
             
             toolbarLayout.addStretch()
             
-            # 快速时间筛选按钮
+            # 快速时间筛选按钮（使用 Fluent PillPushButton）
             for text in ["近30分", "近1小时", "近2小时", "今天"]:
-                btn = QPushButton(text)
+                btn = PillPushButton(text)
                 btn.setCursor(Qt.PointingHandCursor)
-                btn.setStyleSheet("""
-                    QPushButton {
-                        padding: 5px 12px;
-                        border: 1px solid #E0E0E0;
-                        border-radius: 15px;
-                        font-size: 11px;
-                        color: #666666;
-                        background-color: white;
-                    }
-                    QPushButton:hover { border: 1px solid #4CAF50; color: #4CAF50; }
-                """)
+                btn.setCheckable(False)
                 btn.clicked.connect(lambda checked, t=text: self.quickFilter(t))
                 toolbarLayout.addWidget(btn)
             
-            # 复制日志按钮
-            copyBtn = QPushButton("📋 复制日志")
+            # 复制日志按钮（使用 Fluent TransparentPushButton）
+            copyBtn = TransparentPushButton("复制日志")
+            copyBtn.setIcon(FluentIcon.COPY)
             copyBtn.setCursor(Qt.PointingHandCursor)
-            copyBtn.setStyleSheet("""
-                QPushButton {
-                    padding: 5px 12px;
-                    border: none;
-                    font-size: 11px;
-                    color: #1976D2;
-                    background: transparent;
-                }
-                QPushButton:hover { color: #0D47A1; }
-            """)
             copyBtn.clicked.connect(self.copyLog)
             toolbarLayout.addWidget(copyBtn)
             
@@ -1216,17 +1157,17 @@ def main():
             """快速时间筛选"""
             now = QDate.currentDate()
             if timeText == "今天":
-                self.startDateEdit.setDate(now)
-                self.endDateEdit.setDate(now)
+                self.startDatePicker.setDate(now)
+                self.endDatePicker.setDate(now)
             elif timeText == "近30分":
-                self.startDateEdit.setDate(now)
-                self.endDateEdit.setDate(now)
+                self.startDatePicker.setDate(now)
+                self.endDatePicker.setDate(now)
             elif timeText == "近1小时":
-                self.startDateEdit.setDate(now)
-                self.endDateEdit.setDate(now)
+                self.startDatePicker.setDate(now)
+                self.endDatePicker.setDate(now)
             elif timeText == "近2小时":
-                self.startDateEdit.setDate(now)
-                self.endDateEdit.setDate(now)
+                self.startDatePicker.setDate(now)
+                self.endDatePicker.setDate(now)
         
         def filterTimeline(self):
             """筛选时间轴"""
@@ -1275,8 +1216,8 @@ def main():
         def updateData(self):
             """更新页面数据"""
             # 获取日期范围内的记录
-            start_date = self.startDateEdit.date().toString("yyyy-MM-dd")
-            end_date = self.endDateEdit.date().toString("yyyy-MM-dd")
+            start_date = self.startDatePicker.date.toString("yyyy-MM-dd")
+            end_date = self.endDatePicker.date.toString("yyyy-MM-dd")
             
             # 读取所有记录
             all_records = read_records()
