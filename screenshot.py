@@ -5,9 +5,59 @@ import ollama
 import base64
 import csv
 import os
+import json
 from datetime import datetime
-import store 
+import store
 
+# ==================== 配置变量 ====================
+
+# GLM API配置
+GLM_API_KEY = "e0f50530805f4ed0af556c4040d99eb3.DkyxdRgrogMYAWqs"  # 用户需要填写自己的API Key
+GLM_MODEL = "glm-4.6v-flash"
+
+# Ollama配置
+_custom_ollama_host = None
+_custom_ollama_model = None
+
+# 是否使用GLM
+_use_glm = False
+
+
+def set_use_glm(use_glm):
+    """设置是否使用GLM"""
+    global _use_glm
+    _use_glm = use_glm
+
+
+def is_using_glm():
+    """获取是否使用GLM"""
+    return _use_glm
+
+
+def set_glm_api_key(api_key):
+    """设置GLM API Key"""
+    global GLM_API_KEY
+    GLM_API_KEY = api_key
+
+
+def get_glm_api_key():
+    """获取GLM API Key"""
+    return GLM_API_KEY
+
+
+def set_ollama_config(host, model):
+    """设置Ollama配置"""
+    global _custom_ollama_host, _custom_ollama_model
+    _custom_ollama_host = host
+    _custom_ollama_model = model
+
+
+def get_ollama_config():
+    """获取Ollama配置"""
+    return _custom_ollama_host, _custom_ollama_model
+
+
+# ==================== 截图函数 ====================
 
 def capture_screen():
     """截图函数：检测显示器分辨率并全屏截图，返回OpenCV格式图像"""
@@ -19,31 +69,17 @@ def capture_screen():
         return img
 
 
+# ==================== 提示词 ====================
 
-
-
-
-def ollama_recognize():
-    """调用ollama识别截图内容，返回工作类型和描述"""
-    # 截图
-    img = capture_screen()
-    
-    # 压缩图像，减少显存占用（限制最大宽度为1024）
-    max_width = 99999
-    if img.shape[1] > max_width:
-        ratio = max_width / img.shape[1]
-        img = cv2.resize(img, (max_width, int(img.shape[0] * ratio)))
-    # 转换为base64编码（ollama需要base64格式的图像）
-    _, buffer = cv2.imencode('.png', img)
-    img_base64 = base64.b64encode(buffer).decode('utf-8')
-    
+def get_prompt():
+    """获取提示词和工作类型列表"""
     # 工作类型列表
     work_types = ["开发", "沟通", "生活", "学习", "设计", "管理", "文档", "娱乐", "产品", "会议", "运维", "测试", "数据分析", "其他"]
     
     # 提示词：要求模型返回JSON格式的工作类型和描述
     prompt = f"""你是一个工作活动分类专家。请分析当前屏幕截图，判断正在进行的工作类型，并返回JSON格式结果。
 
-可选的工作类型（必须从以下列表中选择一个）：
+可选的工作类型（必须从以下列表中选择一个，不能选择其他）：
 {', '.join(work_types)}
 
 分析规则：
@@ -190,16 +226,133 @@ description撰写规则：
 - 不要输出敏感信息（账号、密码、链接等）
 - 只输出JSON，不要有其他文字"""
     
+    return prompt, work_types
+
+
+# ==================== GLM识别函数 ====================
+
+def glm_recognize():
+    """调用GLM API识别截图内容，返回工作类型和描述"""
+    import tempfile
+    from zai import ZhipuAiClient
+    
+    # 截图
+    img = capture_screen()
+    
+    # 压缩图像，减少API传输大小（限制最大宽度为1024）
+    max_width = 99999
+    if img.shape[1] > max_width:
+        ratio = max_width / img.shape[1]
+        img = cv2.resize(img, (max_width, int(img.shape[0] * ratio)))
+    
+    # 保存图片到临时文件，然后读取（确保格式正确）
+    temp_path = os.path.join(tempfile.gettempdir(), 'screen_capture.png')
+    #cv2.imshow("c",img)
+    #cv2.waitKey(0)
+    cv2.imwrite(temp_path, img)
+    
+    # 读取临时文件并转换为base64
+    with open(temp_path, "rb") as img_file:
+        img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
+    
+    # 删除临时文件
+    os.remove(temp_path)
+    
+    # 获取提示词和工作类型
+    prompt, work_types = get_prompt()
+    
+    # 创建GLM客户端
+    client = ZhipuAiClient(api_key=GLM_API_KEY)
+    
+    # 调用GLM API进行图像识别
+    response = client.chat.completions.create(
+        model=GLM_MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": img_base64
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            }
+        ],
+        thinking={
+            "type": "enabled"
+        }
+    )
+    
+    # 解析返回结果
+    result_text = response.choices[0].message.content
+    #print(f"[GLM原始返回] {result_text}")
+    
+    # 提取JSON结果（处理markdown代码块格式）
+    try:
+        # 如果返回内容包含markdown代码块，提取其中的JSON
+        import re
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            # 尝试直接解析（可能没有代码块标记）
+            json_str = result_text.strip()
+        
+        result = json.loads(json_str)
+        work_type = result.get('type', '其他')
+        description = result.get('description', '')
+        
+        # 验证工作类型是否有效
+        if work_type not in work_types:
+            work_type = '其他'
+        
+        return {
+            'type': work_type,
+            'description': description
+        }
+    except json.JSONDecodeError as e:
+        print(f"[GLM解析失败] {e}")
+        return {
+            'type': '其他',
+            'description': '无法识别工作内容'
+        }
+
+
+# ==================== Ollama识别函数 ====================
+
+def ollama_recognize():
+    """调用ollama识别截图内容，返回工作类型和描述"""
+    # 截图
+    img = capture_screen()
+    
+    # 压缩图像，减少显存占用（限制最大宽度为1024）
+    max_width = 99999
+    if img.shape[1] > max_width:
+        ratio = max_width / img.shape[1]
+        img = cv2.resize(img, (max_width, int(img.shape[0] * ratio)))
+    # 转换为base64编码（ollama需要base64格式的图像）
+    _, buffer = cv2.imencode('.png', img)
+    img_base64 = base64.b64encode(buffer).decode('utf-8')
+    
+    # 获取提示词和工作类型
+    prompt, work_types = get_prompt()
+    
     # 创建ollama客户端，指定远程IP地址
-    client = ollama.Client(host='http://192.168.31.23:11434')  # 修改为实际的ollama服务器IP
+    client = ollama.Client(host=_custom_ollama_host or 'http://192.168.31.23:11434')
     
     # 调用ollama进行图像识别
     response = client.chat(
-        model='minicpm-v4.6',  # 模型名称（根据本地安装的模型修改）
+        model=_custom_ollama_model or 'minicpm-v4.6',
         messages=[{
             'role': 'user',
             'content': prompt,
-            'images': [img_base64]  # 传入base64编码的图像
+            'images': [img_base64]
         }],
         think=True,
         keep_alive='1h'
@@ -209,9 +362,7 @@ description撰写规则：
     result_text = response['message']['content']
     
     # 提取JSON结果
-    import json
     try:
-        # 尝试解析JSON
         result = json.loads(result_text)
         work_type = result.get('type', '其他')
         description = result.get('description', '')
@@ -225,18 +376,61 @@ description撰写规则：
             'description': description
         }
     except json.JSONDecodeError:
-        # 如果JSON解析失败，返回默认值
         return {
             'type': '其他',
             'description': '无法识别工作内容'
         }
+
+
+# ==================== 统一识别接口 ====================
+
+def recognize():
+    """统一识别接口，根据配置选择使用GLM或Ollama"""
+    if _use_glm:
+        return glm_recognize()
+    else:
+        return ollama_recognize()
+
+
+# ==================== 测试连接 ====================
+
+def test_glm_connection():
+    """测试GLM连接"""
+    try:
+        from zai import ZhipuAiClient
+        client = ZhipuAiClient(api_key=GLM_API_KEY)
+        response = client.chat.completions.create(
+            model=GLM_MODEL,
+            messages=[{"role": "user", "content": "你好"}]
+        )
+        return True, "GLM连接成功"
+    except Exception as e:
+        return False, f"GLM连接失败: {str(e)}"
+
+
+def test_ollama_connection():
+    """测试Ollama连接"""
+    try:
+        host = _custom_ollama_host or 'http://192.168.31.23:11434'
+        model = _custom_ollama_model or 'minicpm-v4.6'
+        client = ollama.Client(host=host)
+        response = client.chat(
+            model=model,
+            messages=[{"role": "user", "content": "你好"}]
+        )
+        return True, "Ollama连接成功"
+    except Exception as e:
+        return False, f"Ollama连接失败: {str(e)}"
+
+
+# ==================== 存储函数 ====================
 
 def run_and_store():
     """
     运行截图识别并存储结果到CSV
     
     功能：
-    1. 调用ollama_recognize()进行截图识别
+    1. 调用recognize()进行截图识别
     2. 计算与上一条记录的时间间隔（即上一条记录的持续时长）
     3. 将新记录添加到records.csv
     4. 更新daily_summary.csv中的汇总数据
@@ -255,7 +449,7 @@ def run_and_store():
     current_time = now.strftime('%H:%M:%S')  # 格式：09:30:00
     
     # 调用截图识别函数，获取工作类型和描述
-    result = ollama_recognize()
+    result = recognize()
     work_type = result['type']          # 工作类型，如"开发"、"沟通"
     description = result['description'] # 工作描述，如"正在编写Python代码"
     
@@ -342,6 +536,108 @@ def run_and_store():
     
     return result
 
+
+def run_and_store_with_interval(interval_minutes):
+    """
+    定时监控模式的截图识别并存储结果
+    
+    与 run_and_store() 的区别：
+    - 本函数用于定时监控模式
+    - 每条记录的持续时长固定为监控间隔时长，而不是距离上次记录的实际时间间隔
+    - 确保每次监控记录的时长统计准确
+    
+    参数：
+        interval_minutes: 监控间隔时长（分钟），如 5、10、15 等
+    
+    返回值：字典，包含识别结果 {'type': '工作类型', 'description': '工作描述'}
+    """
+    from store import init_db, read_summary, read_records, write_summary, write_records, get_next_id, WORK_TYPES
+    
+    # 初始化数据库（确保文件夹和CSV文件存在）
+    init_db()
+    
+    # 获取当前系统时间
+    now = datetime.now()
+    today = now.strftime('%Y-%m-%d')      # 格式：2025-01-15
+    current_time = now.strftime('%H:%M:%S')  # 格式：09:30:00
+    
+    # 调用截图识别函数，获取工作类型和描述
+    result = recognize()
+    work_type = result['type']          # 工作类型，如"开发"、"沟通"
+    description = result['description'] # 工作描述，如"正在编写Python代码"
+    
+    # 读取现有数据
+    summaries = read_summary()  # 所有日期的汇总数据
+    records = read_records()    # 所有记录
+    
+    # 使用固定的监控间隔时长作为本次记录的持续时长
+    duration_minutes = interval_minutes
+    
+    # 创建新记录
+    new_id = get_next_id(records)  # 获取新ID
+    new_record = {
+        'ID': str(new_id),
+        '日期': today,
+        '时间': current_time,
+        '工作类型': work_type,
+        '工作描述': description,
+        '持续时长(分钟)': f'{duration_minutes:.1f}'  # 固定为监控间隔时长
+    }
+    records.append(new_record)  # 添加到记录列表
+    
+    # 更新每日汇总数据
+    if today in summaries:
+        # 今天已有记录，更新汇总
+        summary = summaries[today]
+        summary['记录条数'] = str(int(summary['记录条数']) + 1)  # 记录数+1
+        summary['最晚使用时间'] = current_time  # 更新最晚使用时间
+        # 更新总使用时长（加上本次时长，转换为小时）
+        summary['使用时长(小时)'] = f"{float(summary.get('使用时长(小时)', '0')) + duration_minutes / 60:.2f}"
+        # 更新对应工作类型的时长（使用get方法避免KeyError）
+        summary[f'{work_type}时长(小时)'] = f"{float(summary.get(f'{work_type}时长(小时)', '0')) + duration_minutes / 60:.2f}"
+        
+        # 更新主要工作：取时长最长的工作类型
+        type_durations = {t: float(summary.get(f'{t}时长(小时)', '0')) for t in WORK_TYPES}
+        summary['主要工作'] = max(type_durations, key=type_durations.get)
+        
+        # 更新当前小时的记录条数
+        current_hour = now.strftime('%H')  # 获取当前小时（00-23）
+        hour_key = f'{current_hour}:00记录数'
+        summary[hour_key] = str(int(summary.get(hour_key, '0')) + 1)
+    else:
+        # 今天第一条记录，创建新的汇总
+        summary = {
+            '日期': today,
+            '记录条数': '1',
+            '使用时长(小时)': f'{duration_minutes / 60:.2f}',  # 第一条记录使用监控间隔时长
+            '主要工作': work_type,
+            '最早使用时间': current_time,
+            '最晚使用时间': current_time
+        }
+        # 初始化所有工作类型的时长为0
+        for t in WORK_TYPES:
+            summary[f'{t}时长(小时)'] = '0'
+        # 设置当前工作类型的时长
+        summary[f'{work_type}时长(小时)'] = f'{duration_minutes / 60:.2f}'
+        # 初始化每个小时的记录数为0
+        for h in range(24):
+            summary[f'{h:02d}:00记录数'] = '0'
+        # 设置当前小时的记录数为1
+        current_hour = now.strftime('%H')
+        summary[f'{current_hour}:00记录数'] = '1'
+        summaries[today] = summary
+    
+    # 将更新后的数据写入CSV文件
+    write_summary(summaries)
+    write_records(records)
+    
+    # 打印记录信息
+    print(f"[定时监控] 已记录: [{work_type}] {description} (间隔: {interval_minutes}分钟)")
+    
+    return result
+
+
+# ==================== 统计函数 ====================
 
 def get_today_stats():
     """
@@ -450,109 +746,12 @@ def get_monitor_info():
     
     return monitors if monitors else [{'name': '主显示器', 'resolution': '未知', 'scale': '未知', 'refresh_rate': '未知'}]
 
-#定时监控模式的截图识别并存储结果
-def run_and_store_with_interval(interval_minutes):
-    """
-    定时监控模式的截图识别并存储结果
-    
-    与 run_and_store() 的区别：
-    - 本函数用于定时监控模式
-    - 每条记录的持续时长固定为监控间隔时长，而不是距离上次记录的实际时间间隔
-    - 确保每次监控记录的时长统计准确
-    
-    参数：
-        interval_minutes: 监控间隔时长（分钟），如 5、10、15 等
-    
-    返回值：字典，包含识别结果 {'type': '工作类型', 'description': '工作描述'}
-    """
-    from store import init_db, read_summary, read_records, write_summary, write_records, get_next_id, WORK_TYPES
-    
-    # 初始化数据库（确保文件夹和CSV文件存在）
-    init_db()
-    
-    # 获取当前系统时间
-    now = datetime.now()
-    today = now.strftime('%Y-%m-%d')      # 格式：2025-01-15
-    current_time = now.strftime('%H:%M:%S')  # 格式：09:30:00
-    
-    # 调用截图识别函数，获取工作类型和描述
-    result = ollama_recognize()
-    work_type = result['type']          # 工作类型，如"开发"、"沟通"
-    description = result['description'] # 工作描述，如"正在编写Python代码"
-    
-    # 读取现有数据
-    summaries = read_summary()  # 所有日期的汇总数据
-    records = read_records()    # 所有记录
-    
-    # 使用固定的监控间隔时长作为本次记录的持续时长
-    duration_minutes = interval_minutes
-    
-    # 创建新记录
-    new_id = get_next_id(records)  # 获取新ID
-    new_record = {
-        'ID': str(new_id),
-        '日期': today,
-        '时间': current_time,
-        '工作类型': work_type,
-        '工作描述': description,
-        '持续时长(分钟)': f'{duration_minutes:.1f}'  # 固定为监控间隔时长
-    }
-    records.append(new_record)  # 添加到记录列表
-    
-    # 更新每日汇总数据
-    if today in summaries:
-        # 今天已有记录，更新汇总
-        summary = summaries[today]
-        summary['记录条数'] = str(int(summary['记录条数']) + 1)  # 记录数+1
-        summary['最晚使用时间'] = current_time  # 更新最晚使用时间
-        # 更新总使用时长（加上本次时长，转换为小时）
-        summary['使用时长(小时)'] = f"{float(summary.get('使用时长(小时)', '0')) + duration_minutes / 60:.2f}"
-        # 更新对应工作类型的时长（使用get方法避免KeyError）
-        summary[f'{work_type}时长(小时)'] = f"{float(summary.get(f'{work_type}时长(小时)', '0')) + duration_minutes / 60:.2f}"
-        
-        # 更新主要工作：取时长最长的工作类型
-        type_durations = {t: float(summary.get(f'{t}时长(小时)', '0')) for t in WORK_TYPES}
-        summary['主要工作'] = max(type_durations, key=type_durations.get)
-        
-        # 更新当前小时的记录条数
-        current_hour = now.strftime('%H')  # 获取当前小时（00-23）
-        hour_key = f'{current_hour}:00记录数'
-        summary[hour_key] = str(int(summary.get(hour_key, '0')) + 1)
-    else:
-        # 今天第一条记录，创建新的汇总
-        summary = {
-            '日期': today,
-            '记录条数': '1',
-            '使用时长(小时)': f'{duration_minutes / 60:.2f}',  # 第一条记录使用监控间隔时长
-            '主要工作': work_type,
-            '最早使用时间': current_time,
-            '最晚使用时间': current_time
-        }
-        # 初始化所有工作类型的时长为0
-        for t in WORK_TYPES:
-            summary[f'{t}时长(小时)'] = '0'
-        # 设置当前工作类型的时长
-        summary[f'{work_type}时长(小时)'] = f'{duration_minutes / 60:.2f}'
-        # 初始化每个小时的记录数为0
-        for h in range(24):
-            summary[f'{h:02d}:00记录数'] = '0'
-        # 设置当前小时的记录数为1
-        current_hour = now.strftime('%H')
-        summary[f'{current_hour}:00记录数'] = '1'
-        summaries[today] = summary
-    
-    # 将更新后的数据写入CSV文件
-    write_summary(summaries)
-    write_records(records)
-    
-    # 打印记录信息
-    print(f"[定时监控] 已记录: [{work_type}] {description} (间隔: {interval_minutes}分钟)")
-    
-    return result
 
+# ==================== 定时监控 ====================
 
 # 全局变量：监控定时器引用（防止被垃圾回收）
 _monitor_timer = None
+_monitor_workers = []
 
 
 def start_monitor(interval_minutes, ollama_host=None, callback=None):
@@ -582,7 +781,7 @@ def start_monitor(interval_minutes, ollama_host=None, callback=None):
     
     # 如果设置了自定义 ollama 地址，更新全局配置
     if ollama_host:
-        update_ollama_host(ollama_host)
+        set_ollama_config(ollama_host, _custom_ollama_model)
     
     # 将分钟转换为毫秒
     interval_ms = interval_minutes * 60 * 1000
@@ -650,28 +849,8 @@ def stop_monitor():
         print("[定时监控] 未在运行")
 
 
-def update_ollama_host(host):
-    """
-    更新 ollama 服务器地址
-    
-    功能：修改 ollama_recognize 函数使用的服务器地址
-    
-    参数：
-        host: ollama 服务器地址，如 'http://192.168.1.100:11434'
-    
-    返回值：无
-    """
-    # 使用全局变量存储自定义地址
-    global _custom_ollama_host
-    _custom_ollama_host = host
-    print(f"[配置] ollama 服务器地址已更新为: {host}")
+# ==================== 测试函数 ====================
 
-
-# 全局变量：自定义 ollama 地址
-_custom_ollama_host = None
-
-
-# 测试函数
 if __name__ == '__main__':
     print("运行截图识别...")
     result = run_and_store()
@@ -689,4 +868,3 @@ if __name__ == '__main__':
     monitors = get_monitor_info()
     for m in monitors:
         print(f"  {m['name']}: {m['resolution']}, {m['scale']}, {m['refresh_rate']}")
-    

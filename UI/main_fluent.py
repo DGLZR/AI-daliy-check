@@ -81,7 +81,7 @@ def main():
                                 FluentIcon, ComboBox, CalendarPicker, SearchLineEdit,
                                 InfoBar, InfoBarPosition, ToolButton, FluentIconBase)
     from store import init_db, get_daily_summary, get_daily_records, read_records
-    from screenshot import run_and_store, get_today_stats, get_monitor_info, start_monitor, stop_monitor
+    from screenshot import run_and_store, get_today_stats, get_monitor_info, start_monitor, stop_monitor, set_use_glm, set_ollama_config, test_glm_connection, test_ollama_connection
     from datetime import datetime, timedelta
 
     # ==================== 工具函数 ====================
@@ -1581,55 +1581,162 @@ def main():
             
             layout.addWidget(scaleCard)
             
-            # ========== 服务器设置 ==========
-            serverCard = QFrame()
-            serverCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
-            serverLayout = QVBoxLayout(serverCard)
-            serverLayout.setContentsMargins(20, 18, 20, 18)
-            serverLayout.setSpacing(10)
-            
-            serverTitle = QLabel("🤖 Ollama 服务器")
-            serverTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
-            serverLayout.addWidget(serverTitle)
-            
-            serverInfo = QLabel("服务器地址")
-            serverInfo.setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;")
-            serverLayout.addWidget(serverInfo)
-            
-            serverUrl = QLabel("http://192.168.31.23:11434")
-            serverUrl.setStyleSheet("color: #1976D2; font-size: 13px; font-weight: bold; border: none; background: transparent;")
-            serverUrl.setWordWrap(True)
-            serverLayout.addWidget(serverUrl)
-            
-            serverStatus = QLabel("● 已连接")
-            serverStatus.setStyleSheet("color: #4CAF50; font-size: 12px; border: none; background: transparent;")
-            serverLayout.addWidget(serverStatus)
-            
-            layout.addWidget(serverCard)
-            
-            # ========== 模型设置 ==========
+            # ========== 识别模型设置 ==========
             modelCard = QFrame()
             modelCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
             modelLayout = QVBoxLayout(modelCard)
             modelLayout.setContentsMargins(20, 18, 20, 18)
-            modelLayout.setSpacing(10)
+            modelLayout.setSpacing(12)
             
             modelTitle = QLabel("🧠 识别模型")
             modelTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
             modelLayout.addWidget(modelTitle)
             
-            modelInfo = QLabel("当前模型")
-            modelInfo.setStyleSheet("color: #888888; font-size: 11px; border: none; background: transparent;")
-            modelLayout.addWidget(modelInfo)
+            # 模型选择
+            modelSelectLayout = QHBoxLayout()
+            modelSelectLabel = QLabel("选择模型:")
+            modelSelectLabel.setStyleSheet("font-size: 12px; color: #333333; border: none; background: transparent;")
+            modelSelectLayout.addWidget(modelSelectLabel)
             
-            modelName = QLabel("minicpm-v4.6")
-            modelName.setStyleSheet("color: #333333; font-size: 14px; font-weight: bold; border: none; background: transparent;")
-            modelLayout.addWidget(modelName)
+            self.modelCombo = ComboBox()
+            self.modelCombo.addItems(["GLM 通用模型", "自定义 Ollama"])
+            self.modelCombo.currentTextChanged.connect(self.onModelTypeChanged)
+            modelSelectLayout.addWidget(self.modelCombo)
+            modelSelectLayout.addStretch()
             
-            modelDesc = QLabel("支持图像识别的多模态大语言模型")
-            modelDesc.setStyleSheet("color: #666666; font-size: 11px; border: none; background: transparent;")
-            modelDesc.setWordWrap(True)
-            modelLayout.addWidget(modelDesc)
+            modelLayout.addLayout(modelSelectLayout)
+            
+            # GLM设置区域
+            self.glmWidget = QWidget()
+            self.glmWidget.setStyleSheet("border: none; background: transparent;")
+            glmLayout = QVBoxLayout(self.glmWidget)
+            glmLayout.setContentsMargins(0, 5, 0, 0)
+            glmLayout.setSpacing(8)
+            
+            glmInfo = QLabel("使用 GLM-4.6V-Flash 通用模型（无需本地部署）")
+            glmInfo.setStyleSheet("color: #666666; font-size: 11px; border: none; background: transparent;")
+            glmLayout.addWidget(glmInfo)
+            
+            glmTestBtnLayout = QHBoxLayout()
+            self.glmTestBtn = QPushButton("🔗 测试 GLM 连接")
+            self.glmTestBtn.setCursor(Qt.PointingHandCursor)
+            self.glmTestBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2196F3;
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    border: none;
+                }
+                QPushButton:hover { background-color: #1976D2; }
+                QPushButton:pressed { background-color: #1565C0; }
+            """)
+            self.glmTestBtn.clicked.connect(self.testGlmConnection)
+            glmTestBtnLayout.addWidget(self.glmTestBtn)
+            glmTestBtnLayout.addStretch()
+            glmLayout.addLayout(glmTestBtnLayout)
+            
+            self.glmStatusLabel = QLabel("")
+            self.glmStatusLabel.setStyleSheet("font-size: 11px; border: none; background: transparent;")
+            glmLayout.addWidget(self.glmStatusLabel)
+            
+            modelLayout.addWidget(self.glmWidget)
+            
+            # Ollama设置区域
+            self.ollamaWidget = QWidget()
+            self.ollamaWidget.setStyleSheet("border: none; background: transparent;")
+            ollamaLayout = QVBoxLayout(self.ollamaWidget)
+            ollamaLayout.setContentsMargins(0, 5, 0, 0)
+            ollamaLayout.setSpacing(10)
+            
+            ollamaHostLayout = QHBoxLayout()
+            ollamaHostLabel = QLabel("服务器地址:")
+            ollamaHostLabel.setStyleSheet("font-size: 12px; color: #333333; border: none; background: transparent;")
+            ollamaHostLayout.addWidget(ollamaHostLabel)
+            
+            self.ollamaHostInput = QLineEdit()
+            self.ollamaHostInput.setText("http://192.168.31.23:11434")
+            self.ollamaHostInput.setPlaceholderText("http://192.168.31.23:11434")
+            self.ollamaHostInput.setStyleSheet("""
+                QLineEdit {
+                    padding: 6px 10px;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    color: #333333;
+                    background-color: white;
+                }
+                QLineEdit:focus { border: 1px solid #1976D2; }
+            """)
+            ollamaHostLayout.addWidget(self.ollamaHostInput)
+            ollamaLayout.addLayout(ollamaHostLayout)
+            
+            ollamaModelLayout = QHBoxLayout()
+            ollamaModelLabel = QLabel("模型名称:")
+            ollamaModelLabel.setStyleSheet("font-size: 12px; color: #333333; border: none; background: transparent;")
+            ollamaModelLayout.addWidget(ollamaModelLabel)
+            
+            self.ollamaModelInput = QLineEdit()
+            self.ollamaModelInput.setText("minicpm-v4.6")
+            self.ollamaModelInput.setPlaceholderText("minicpm-v4.6")
+            self.ollamaModelInput.setStyleSheet("""
+                QLineEdit {
+                    padding: 6px 10px;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    color: #333333;
+                    background-color: white;
+                }
+                QLineEdit:focus { border: 1px solid #1976D2; }
+            """)
+            ollamaModelLayout.addWidget(self.ollamaModelInput)
+            ollamaLayout.addLayout(ollamaModelLayout)
+            
+            ollamaBtnLayout = QHBoxLayout()
+            
+            applyBtn = QPushButton("✅ 应用设置")
+            applyBtn.setCursor(Qt.PointingHandCursor)
+            applyBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    border: none;
+                }
+                QPushButton:hover { background-color: #43A047; }
+                QPushButton:pressed { background-color: #388E3C; }
+            """)
+            applyBtn.clicked.connect(self.applyOllamaSettings)
+            ollamaBtnLayout.addWidget(applyBtn)
+            
+            self.ollamaTestBtn = QPushButton("🔗 测试 Ollama 连接")
+            self.ollamaTestBtn.setCursor(Qt.PointingHandCursor)
+            self.ollamaTestBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2196F3;
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    border: none;
+                }
+                QPushButton:hover { background-color: #1976D2; }
+                QPushButton:pressed { background-color: #1565C0; }
+            """)
+            self.ollamaTestBtn.clicked.connect(self.testOllamaConnection)
+            ollamaBtnLayout.addWidget(self.ollamaTestBtn)
+            ollamaBtnLayout.addStretch()
+            ollamaLayout.addLayout(ollamaBtnLayout)
+            
+            self.ollamaStatusLabel = QLabel("")
+            self.ollamaStatusLabel.setStyleSheet("font-size: 11px; border: none; background: transparent;")
+            ollamaLayout.addWidget(self.ollamaStatusLabel)
+            
+            modelLayout.addWidget(self.ollamaWidget)
             
             layout.addWidget(modelCard)
             
@@ -1693,6 +1800,66 @@ def main():
             
             scrollArea.setWidget(contentWidget)
             scrollLayout.addWidget(scrollArea)
+            
+            # 初始化模型选择状态
+            self.onModelTypeChanged(self.modelCombo.currentText())
+        
+        def onModelTypeChanged(self, text):
+            """模型类型改变时的处理"""
+            if text == "GLM 通用模型":
+                self.glmWidget.setVisible(True)
+                self.ollamaWidget.setVisible(False)
+                set_use_glm(True)
+            else:
+                self.glmWidget.setVisible(False)
+                self.ollamaWidget.setVisible(True)
+                set_use_glm(False)
+        
+        def testGlmConnection(self):
+            """测试GLM连接"""
+            success, message = test_glm_connection()
+            if success:
+                self.glmStatusLabel.setText(f"✅ {message}")
+                self.glmStatusLabel.setStyleSheet("color: #4CAF50; font-size: 11px; border: none; background: transparent;")
+            else:
+                self.glmStatusLabel.setText(f"❌ {message}")
+                self.glmStatusLabel.setStyleSheet("color: #F44336; font-size: 11px; border: none; background: transparent;")
+        
+        def applyOllamaSettings(self):
+            """应用Ollama设置"""
+            host = self.ollamaHostInput.text().strip()
+            model = self.ollamaModelInput.text().strip()
+            if not host:
+                host = "http://192.168.31.23:11434"
+            if not model:
+                model = "minicpm-v4.6"
+            set_ollama_config(host, model)
+            InfoBar.success(
+                title="设置已保存",
+                content=f"Ollama 服务器: {host}\n模型: {model}",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self
+            )
+        
+        def testOllamaConnection(self):
+            """测试Ollama连接"""
+            host = self.ollamaHostInput.text().strip()
+            model = self.ollamaModelInput.text().strip()
+            if not host:
+                host = "http://192.168.31.23:11434"
+            if not model:
+                model = "minicpm-v4.6"
+            set_ollama_config(host, model)
+            success, message = test_ollama_connection()
+            if success:
+                self.ollamaStatusLabel.setText(f"✅ {message}")
+                self.ollamaStatusLabel.setStyleSheet("color: #4CAF50; font-size: 11px; border: none; background: transparent;")
+            else:
+                self.ollamaStatusLabel.setText(f"❌ {message}")
+                self.ollamaStatusLabel.setStyleSheet("color: #F44336; font-size: 11px; border: none; background: transparent;")
         
         def onScaleChanged(self, text):
             global SCALE_FACTOR
@@ -1865,77 +2032,6 @@ def main():
             intervalLayout.addLayout(intervalGrid)
             layout.addWidget(intervalCard)
             
-            # ========== Ollama 服务器设置 ==========
-            ollamaCard = QFrame()
-            ollamaCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
-            ollamaLayout = QVBoxLayout(ollamaCard)
-            ollamaLayout.setContentsMargins(20, 18, 20, 18)
-            ollamaLayout.setSpacing(12)
-            
-            # 标题
-            ollamaTitle = QLabel("🤖 Ollama 服务器")
-            ollamaTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
-            ollamaLayout.addWidget(ollamaTitle)
-            
-            # 输入框和按钮
-            inputLayout = QHBoxLayout()
-            inputLayout.setSpacing(10)
-            
-            # 默认Ollama地址
-            self.default_ollama_host = "http://192.168.31.23:11434"
-            
-            self.ollamaInput = QLineEdit()
-            self.ollamaInput.setText(self.default_ollama_host)  # 设置默认地址
-            self.ollamaInput.setPlaceholderText("请输入Ollama服务器地址")
-            self.ollamaInput.setStyleSheet("""
-                QLineEdit {
-                    padding: 10px 14px;
-                    border: 2px solid #E0E0E0;
-                    border-radius: 8px;
-                    font-size: 12px;
-                    color: #333333;
-                    background-color: #FAFAFA;
-                }
-                QLineEdit:focus {
-                    border: 2px solid #1976D2;
-                    background-color: white;
-                }
-                QLineEdit::placeholder {
-                    color: #BBBBBB;
-                }
-            """)
-            inputLayout.addWidget(self.ollamaInput)
-            
-            # 应用按钮
-            applyBtn = QPushButton("应用")
-            applyBtn.setCursor(Qt.PointingHandCursor)
-            applyBtn.setMinimumHeight(42)
-            applyBtn.setMinimumWidth(80)
-            applyBtn.setStyleSheet("""
-                QPushButton {
-                    background-color: #1976D2;
-                    color: white;
-                    padding: 10px 20px;
-                    border-radius: 8px;
-                    font-size: 12px;
-                    font-weight: bold;
-                    border: none;
-                }
-                QPushButton:hover { background-color: #1565C0; }
-                QPushButton:pressed { background-color: #0D47A1; }
-            """)
-            applyBtn.clicked.connect(self.applyOllamaHost)
-            inputLayout.addWidget(applyBtn)
-            
-            ollamaLayout.addLayout(inputLayout)
-            
-            # 当前地址显示
-            self.currentHostLabel = QLabel(f"当前地址: {self.default_ollama_host}")
-            self.currentHostLabel.setStyleSheet("font-size: 11px; color: #4CAF50; border: none; background: transparent;")
-            ollamaLayout.addWidget(self.currentHostLabel)
-            
-            layout.addWidget(ollamaCard)
-            
             # ========== 监控日志 ==========
             logCard = QFrame()
             logCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
@@ -2033,34 +2129,6 @@ def main():
                 b.setChecked(b == btn)
             
             print(f"[监控设置] 间隔已选择: {minutes} 分钟")
-        
-        def applyOllamaHost(self):
-            """应用 ollama 服务器地址"""
-            host = self.ollamaInput.text().strip()
-            
-            # 如果输入为空，使用默认地址
-            if not host:
-                host = self.default_ollama_host
-                self.ollamaInput.setText(host)  # 将默认地址填入输入框
-            
-            # 确保地址格式正确
-            if not host.startswith('http://') and not host.startswith('https://'):
-                host = 'http://' + host
-            
-            # 更新地址
-            from screenshot import update_ollama_host
-            update_ollama_host(host)
-            self.currentHostLabel.setText(f"当前地址: {host}")
-            
-            InfoBar.success(
-                title="应用成功",
-                content=f"Ollama 服务器地址已更新为: {host}",
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=3000,
-                parent=self
-            )
         
         def startMonitoring(self):
             """开始监控"""
