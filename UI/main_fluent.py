@@ -70,14 +70,17 @@ def main():
                                  QLabel, QFrame, QScrollArea, QCheckBox,
                                  QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
                                  QSizePolicy, QPushButton, QTableWidget, QTableWidgetItem,
-                                 QLineEdit)
+                                 QLineEdit, QDateEdit, QComboBox, QApplication)
+    from PyQt5.QtCore import Qt, QSize, QTimer, QDate, QPropertyAnimation, QEasingCurve, QDateTime
+    from PyQt5.QtGui import QFont, QColor, QPixmap, QPainter, QPainterPath, QBrush, QPen, QIcon
     from qfluentwidgets import (FluentWindow, NavigationItemPosition, StrongBodyLabel,
                                 TitleLabel, SubtitleLabel, BodyLabel, CaptionLabel,
                                 PrimaryPushButton, TransparentPushButton,
                                 SimpleCardWidget, HeaderCardWidget, TableWidget,
                                 FluentIcon, ComboBox, InfoBar, InfoBarPosition)
-    from store import init_db, get_daily_summary, get_daily_records
+    from store import init_db, get_daily_summary, get_daily_records, read_records
     from screenshot import run_and_store, get_today_stats, get_monitor_info, start_monitor, stop_monitor
+    from datetime import datetime, timedelta
 
     # ==================== 工具函数 ====================
     
@@ -374,14 +377,22 @@ def main():
             timeHeaderLayout.addLayout(legendLayout)
             timeLayout.addLayout(timeHeaderLayout)
             
-            # 热力图网格
+            # 热力图容器
+            heatContainer = QWidget()
+            heatContainer.setStyleSheet("background: transparent; border: none;")
+            heatContainerLayout = QVBoxLayout(heatContainer)
+            heatContainerLayout.setContentsMargins(0, 0, 0, 0)
+            heatContainerLayout.setSpacing(4)
+            
+            # 热力图格子
             heatGrid = QGridLayout()
             heatGrid.setSpacing(4)
+            heatGrid.setContentsMargins(0, 0, 0, 0)
             
             self.hourBlocks = []
             for h in range(24):
                 block = QLabel("0")
-                block.setMinimumSize(35, 30)
+                block.setMinimumSize(30, 28)
                 block.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 block.setAlignment(Qt.AlignCenter)
                 block.setStyleSheet("""
@@ -394,27 +405,27 @@ def main():
                 self.hourBlocks.append(block)
                 heatGrid.addWidget(block, 0, h)
             
-            timeLayout.addLayout(heatGrid)
+            heatContainerLayout.addLayout(heatGrid)
             
-            # 时间标签
-            timeLabelsLayout = QHBoxLayout()
-            timeLabelsLayout.setSpacing(0)
-            timeLabelsLayout.setContentsMargins(0, 0, 0, 0)
+            # 时间标签（使用相同的网格布局，居中对齐）
+            timeLabelsGrid = QGridLayout()
+            timeLabelsGrid.setSpacing(4)
+            timeLabelsGrid.setContentsMargins(0, 0, 0, 0)
             
             for h in range(24):
                 if h % 3 == 0:
                     label = QLabel(f"{h}:00")
                     label.setStyleSheet("font-size: 9px; color: #999999; border: none; background: transparent;")
-                    label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-                    label.setAlignment(Qt.AlignLeft)
-                    timeLabelsLayout.addWidget(label)
+                    label.setAlignment(Qt.AlignCenter)  # 居中对齐
+                    timeLabelsGrid.addWidget(label, 0, h)
                 else:
+                    # 空占位符
                     spacer = QWidget()
-                    spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-                    spacer.setStyleSheet("border: none;")
-                    timeLabelsLayout.addWidget(spacer)
+                    spacer.setStyleSheet("background: transparent; border: none;")
+                    timeLabelsGrid.addWidget(spacer, 0, h)
             
-            timeLayout.addLayout(timeLabelsLayout)
+            heatContainerLayout.addLayout(timeLabelsGrid)
+            timeLayout.addWidget(heatContainer)
             layout.addWidget(timeCard)
             
             # ========== 显示器信息卡片 ==========
@@ -901,13 +912,27 @@ def main():
                 durationItem.setTextAlignment(Qt.AlignCenter)
                 self.recordsTable.setItem(row, 4, durationItem)
 
-    # ==================== 数据统计页面 ====================
+    # ==================== 工作时间线页面 ====================
     
-    class StatsPage(QWidget):
-        """数据统计页面 - 优化版"""
+    # 工作类型颜色映射（固定颜色）
+    TYPE_COLORS = {
+        "开发": "#4CAF50",    # 绿色
+        "沟通": "#2196F3",    # 蓝色
+        "生活": "#FF9800",    # 橙色
+        "学习": "#9C27B0",    # 紫色
+        "设计": "#E91E63",    # 粉色
+        "管理": "#00BCD4",    # 青色
+        "文档": "#795548",    # 棕色
+        "娱乐": "#F44336",    # 红色
+        "其他": "#607D8B",    # 灰蓝色
+    }
+    
+    class TimelinePage(QWidget):
+        """工作时间线页面 - 替代数据统计页面"""
         def __init__(self, parent=None):
             super().__init__(parent)
-            self.setObjectName("statsPage")
+            self.setObjectName("timelinePage")
+            self.main_window = parent
             
             # 主布局
             mainLayout = QVBoxLayout(self)
@@ -918,211 +943,595 @@ def main():
             scrollArea = QScrollArea()
             scrollArea.setWidgetResizable(True)
             scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            scrollArea.setStyleSheet("QScrollArea { border: none; background-color: #F5F5F5; }")
+            scrollArea.setStyleSheet("QScrollArea { border: none; background-color: #F9F9F9; }")
             
             contentWidget = QWidget()
-            contentWidget.setStyleSheet("background-color: #F5F5F5; border: none;")
+            contentWidget.setStyleSheet("background-color: #F9F9F9; border: none;")
             layout = QVBoxLayout(contentWidget)
             layout.setSpacing(15)
             layout.setContentsMargins(20, 15, 20, 15)
             
-            # 页面标题
-            headerCard = QFrame()
-            headerCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
-            headerLayout = QHBoxLayout(headerCard)
-            headerLayout.setContentsMargins(20, 15, 20, 15)
+            # ========== 1. 顶部筛选栏 ==========
+            filterCard = QFrame()
+            filterCard.setStyleSheet("QFrame { background-color: white; border-radius: 10px; border: none; }")
+            filterLayout = QHBoxLayout(filterCard)
+            filterLayout.setContentsMargins(15, 12, 15, 12)
+            filterLayout.setSpacing(12)
             
-            title = QLabel("📊 数据统计")
-            title.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
-            headerLayout.addWidget(title)
-            headerLayout.addStretch()
+            # 日期选择 - 开始日期
+            self.startDateEdit = QDateEdit()
+            self.startDateEdit.setCalendarPopup(True)
+            self.startDateEdit.setDate(QDate.currentDate())
+            self.startDateEdit.setDisplayFormat("yyyy/MM/dd")
+            self.startDateEdit.setStyleSheet("""
+                QDateEdit {
+                    padding: 6px 10px;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    color: #333333;
+                    background-color: white;
+                }
+                QDateEdit:hover { border: 1px solid #1976D2; }
+            """)
+            self.startDateEdit.dateChanged.connect(self.updateData)
+            filterLayout.addWidget(self.startDateEdit)
             
-            layout.addWidget(headerCard)
+            # "至" 文本
+            toLabel = QLabel("至")
+            toLabel.setStyleSheet("color: #666666; font-size: 12px; border: none; background: transparent;")
+            filterLayout.addWidget(toLabel)
             
-            # 工作类型时长统计卡片
-            typeCard = QFrame()
-            typeCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
-            typeCardLayout = QVBoxLayout(typeCard)
-            typeCardLayout.setContentsMargins(20, 15, 20, 15)
-            typeCardLayout.setSpacing(12)
+            # 日期选择 - 结束日期
+            self.endDateEdit = QDateEdit()
+            self.endDateEdit.setCalendarPopup(True)
+            self.endDateEdit.setDate(QDate.currentDate())
+            self.endDateEdit.setDisplayFormat("yyyy/MM/dd")
+            self.endDateEdit.setStyleSheet("""
+                QDateEdit {
+                    padding: 6px 10px;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    color: #333333;
+                    background-color: white;
+                }
+                QDateEdit:hover { border: 1px solid #1976D2; }
+            """)
+            self.endDateEdit.dateChanged.connect(self.updateData)
+            filterLayout.addWidget(self.endDateEdit)
             
-            typeTitle = QLabel("⏱️ 工作类型时长统计")
-            typeTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
-            typeCardLayout.addWidget(typeTitle)
+            filterLayout.addStretch()
             
-            typeGrid = QGridLayout()
-            typeGrid.setSpacing(10)
+            # 搜索框
+            self.searchInput = QLineEdit()
+            self.searchInput.setPlaceholderText("🔍 搜索活动...")
+            self.searchInput.setStyleSheet("""
+                QLineEdit {
+                    padding: 6px 12px;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    color: #333333;
+                    background-color: #FAFAFA;
+                    min-width: 180px;
+                }
+                QLineEdit:focus { border: 1px solid #1976D2; background-color: white; }
+            """)
+            self.searchInput.textChanged.connect(self.filterTimeline)
+            filterLayout.addWidget(self.searchInput)
             
-            self.typeCards = {}
-            typeIcons = {
-                "开发": "💻", "沟通": "💬", "生活": "🏠",
-                "学习": "📚", "设计": "🎨", "管理": "📋",
-                "文档": "📝", "娱乐": "🎮", "其他": "📦"
-            }
+            layout.addWidget(filterCard)
             
-            for i, (work_type, icon) in enumerate(typeIcons.items()):
-                card = StatCard(f"{work_type}", "0 小时", icon, self)
-                card.setMinimumSize(120, 65)
-                card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-                self.typeCards[work_type] = card
-                typeGrid.addWidget(card, i // 3, i % 3)
+            # ========== 2. 核心数据统计区 ==========
+            statsCard = QFrame()
+            statsCard.setStyleSheet("QFrame { background-color: white; border-radius: 10px; border: none; }")
+            statsLayout = QHBoxLayout(statsCard)
+            statsLayout.setContentsMargins(20, 15, 20, 15)
+            statsLayout.setSpacing(40)
             
-            typeCardLayout.addLayout(typeGrid)
-            layout.addWidget(typeCard)
+            # 记录条数
+            recordWidget = QWidget()
+            recordWidget.setStyleSheet("border: none; background: transparent;")
+            recordLayout = QVBoxLayout(recordWidget)
+            recordLayout.setSpacing(4)
+            self.recordCountLabel = QLabel("0")
+            self.recordCountLabel.setStyleSheet("font-size: 28px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            recordLayout.addWidget(self.recordCountLabel)
+            recordSubLabel = QLabel("记录条数")
+            recordSubLabel.setStyleSheet("font-size: 12px; color: #999999; border: none; background: transparent;")
+            recordLayout.addWidget(recordSubLabel)
+            statsLayout.addWidget(recordWidget)
             
-            # 每小时记录分布卡片
-            hourCard = QFrame()
-            hourCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
-            hourCardLayout = QVBoxLayout(hourCard)
-            hourCardLayout.setContentsMargins(20, 15, 20, 15)
-            hourCardLayout.setSpacing(12)
+            # 专注时长
+            durationWidget = QWidget()
+            durationWidget.setStyleSheet("border: none; background: transparent;")
+            durationLayout = QVBoxLayout(durationWidget)
+            durationLayout.setSpacing(4)
+            self.durationLabel = QLabel("0h")
+            self.durationLabel.setStyleSheet("font-size: 28px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            durationLayout.addWidget(self.durationLabel)
+            durationSubLabel = QLabel("专注时长")
+            durationSubLabel.setStyleSheet("font-size: 12px; color: #999999; border: none; background: transparent;")
+            durationLayout.addWidget(durationSubLabel)
+            statsLayout.addWidget(durationWidget)
             
-            hourTitle = QLabel("🕐 每小时记录分布")
-            hourTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
-            hourCardLayout.addWidget(hourTitle)
+            # 活跃时段
+            activeWidget = QWidget()
+            activeWidget.setStyleSheet("border: none; background: transparent;")
+            activeLayout = QVBoxLayout(activeWidget)
+            activeLayout.setSpacing(4)
+            self.activeTimeLabel = QLabel("--:-- — --:--")
+            self.activeTimeLabel.setStyleSheet("font-size: 20px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            activeLayout.addWidget(self.activeTimeLabel)
+            activeSubLabel = QLabel("活跃时段")
+            activeSubLabel.setStyleSheet("font-size: 12px; color: #999999; border: none; background: transparent;")
+            activeLayout.addWidget(activeSubLabel)
+            statsLayout.addWidget(activeWidget)
             
-            # 热力图容器
-            heatContainer = QWidget()
-            heatContainer.setStyleSheet("border: none; background: transparent;")
-            hourGrid = QGridLayout(heatContainer)
-            hourGrid.setSpacing(4)
-            hourGrid.setContentsMargins(0, 0, 0, 0)
+            statsLayout.addStretch()
             
-            self.hourLabels = {}
-            for h in range(24):
-                hourWidget = QWidget()
-                hourWidget.setStyleSheet("border: none; background: transparent;")
-                hourWidgetLayout = QVBoxLayout(hourWidget)
-                hourWidgetLayout.setSpacing(2)
-                hourWidgetLayout.setContentsMargins(2, 2, 2, 2)
-                
-                hourLabel = QLabel(f"{h:02d}", hourWidget)
-                hourLabel.setAlignment(Qt.AlignCenter)
-                hourLabel.setStyleSheet("color: #666666; font-size: 9px; border: none; background: transparent;")
-                
-                countLabel = QLabel("0", hourWidget)
-                countLabel.setAlignment(Qt.AlignCenter)
-                countLabel.setStyleSheet("""
-                    background-color: #E3F2FD;
+            # 显示分类时长分布开关
+            self.showDistCheckBox = QCheckBox("显示分类时长分布")
+            self.showDistCheckBox.setChecked(True)
+            self.showDistCheckBox.setStyleSheet("""
+                QCheckBox {
+                    font-size: 12px; color: #333333; border: none; background: transparent;
+                    spacing: 6px;
+                }
+                QCheckBox::indicator {
+                    width: 18px; height: 18px;
+                    border: 2px solid #E0E0E0;
                     border-radius: 4px;
-                    padding: 4px;
-                    color: #1976D2;
-                    font-weight: bold;
-                    font-size: 10px;
-                    border: none;
+                    background-color: white;
+                }
+                QCheckBox::indicator:checked {
+                    background-color: #4CAF50;
+                    border: 2px solid #4CAF50;
+                }
+            """)
+            self.showDistCheckBox.stateChanged.connect(self.toggleDistribution)
+            statsLayout.addWidget(self.showDistCheckBox)
+            
+            layout.addWidget(statsCard)
+            
+            # ========== 3. 分类时长分布图 ==========
+            self.distCard = QFrame()
+            self.distCard.setStyleSheet("QFrame { background-color: white; border-radius: 10px; border: none; }")
+            distLayout = QVBoxLayout(self.distCard)
+            distLayout.setContentsMargins(20, 15, 20, 15)
+            distLayout.setSpacing(12)
+            
+            # 标题栏
+            distHeaderLayout = QHBoxLayout()
+            distTitle = QLabel("📊 分类时长分布")
+            distTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            distHeaderLayout.addWidget(distTitle)
+            distHeaderLayout.addStretch()
+            distLayout.addLayout(distHeaderLayout)
+            
+            # 分类列表容器
+            self.distContainer = QWidget()
+            self.distContainer.setStyleSheet("border: none; background: transparent;")
+            self.distListLayout = QVBoxLayout(self.distContainer)
+            self.distListLayout.setSpacing(8)
+            self.distListLayout.setContentsMargins(0, 0, 0, 0)
+            distLayout.addWidget(self.distContainer)
+            
+            layout.addWidget(self.distCard)
+            
+            # ========== 4. 活动时间轴列表 ==========
+            timelineCard = QFrame()
+            timelineCard.setStyleSheet("QFrame { background-color: white; border-radius: 10px; border: none; }")
+            timelineLayout = QVBoxLayout(timelineCard)
+            timelineLayout.setContentsMargins(20, 15, 20, 15)
+            timelineLayout.setSpacing(12)
+            
+            # 工具栏
+            toolbarLayout = QHBoxLayout()
+            
+            toolbarTitle = QLabel("⏱️ 活动时间线")
+            toolbarTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            toolbarLayout.addWidget(toolbarTitle)
+            
+            # 标签筛选下拉框
+            self.tagFilterCombo = QComboBox()
+            self.tagFilterCombo.addItems(["全部标签", "开发", "沟通", "生活", "学习", "设计", "管理", "文档", "娱乐", "其他"])
+            self.tagFilterCombo.setStyleSheet("""
+                QComboBox {
+                    padding: 5px 10px;
+                    border: 1px solid #E0E0E0;
+                    border-radius: 6px;
+                    font-size: 11px;
+                    color: #333333;
+                    background-color: white;
+                    min-width: 80px;
+                }
+            """)
+            self.tagFilterCombo.currentTextChanged.connect(self.filterTimeline)
+            toolbarLayout.addWidget(self.tagFilterCombo)
+            
+            toolbarLayout.addStretch()
+            
+            # 快速时间筛选按钮
+            for text in ["近30分", "近1小时", "近2小时", "今天"]:
+                btn = QPushButton(text)
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.setStyleSheet("""
+                    QPushButton {
+                        padding: 5px 12px;
+                        border: 1px solid #E0E0E0;
+                        border-radius: 15px;
+                        font-size: 11px;
+                        color: #666666;
+                        background-color: white;
+                    }
+                    QPushButton:hover { border: 1px solid #4CAF50; color: #4CAF50; }
                 """)
-                
-                hourWidgetLayout.addWidget(countLabel)
-                hourWidgetLayout.addWidget(hourLabel)
-                
-                self.hourLabels[h] = countLabel
-                hourGrid.addWidget(hourWidget, h // 8, h % 8)
+                btn.clicked.connect(lambda checked, t=text: self.quickFilter(t))
+                toolbarLayout.addWidget(btn)
             
-            hourCardLayout.addWidget(heatContainer)
+            # 复制日志按钮
+            copyBtn = QPushButton("📋 复制日志")
+            copyBtn.setCursor(Qt.PointingHandCursor)
+            copyBtn.setStyleSheet("""
+                QPushButton {
+                    padding: 5px 12px;
+                    border: none;
+                    font-size: 11px;
+                    color: #1976D2;
+                    background: transparent;
+                }
+                QPushButton:hover { color: #0D47A1; }
+            """)
+            copyBtn.clicked.connect(self.copyLog)
+            toolbarLayout.addWidget(copyBtn)
             
-            # 时间标签
-            timeLabelsLayout = QHBoxLayout()
-            timeLabelsLayout.setSpacing(0)
-            timeLabelsLayout.setContentsMargins(0, 0, 0, 0)
+            timelineLayout.addLayout(toolbarLayout)
             
-            for h in range(24):
-                if h % 3 == 0:
-                    label = QLabel(f"{h}:00")
-                    label.setStyleSheet("font-size: 9px; color: #999999; border: none; background: transparent;")
-                    label.setFixedWidth(40)
-                    label.setAlignment(Qt.AlignLeft)
-                    timeLabelsLayout.addWidget(label)
-                else:
-                    spacer = QWidget()
-                    spacer.setFixedWidth(40)
-                    spacer.setStyleSheet("border: none;")
-                    timeLabelsLayout.addWidget(spacer)
+            # 时间轴列表容器
+            self.timelineContainer = QWidget()
+            self.timelineContainer.setStyleSheet("border: none; background: transparent;")
+            self.timelineListLayout = QVBoxLayout(self.timelineContainer)
+            self.timelineListLayout.setSpacing(0)
+            self.timelineListLayout.setContentsMargins(0, 0, 0, 0)
+            timelineLayout.addWidget(self.timelineContainer)
             
-            hourCardLayout.addLayout(timeLabelsLayout)
-            layout.addWidget(hourCard)
-            
-            # 使用时间卡片
-            timeCard = QFrame()
-            timeCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
-            timeCardLayout = QHBoxLayout(timeCard)
-            timeCardLayout.setContentsMargins(20, 12, 20, 12)
-            timeCardLayout.setSpacing(30)
-            
-            self.firstUseLabel = QLabel("🌅 最早使用: --:--")
-            self.firstUseLabel.setStyleSheet("font-size: 13px; color: #333333; border: none; background: transparent;")
-            timeCardLayout.addWidget(self.firstUseLabel)
-            timeCardLayout.addStretch()
-            
-            self.lastUseLabel = QLabel("🌙 最晚使用: --:--")
-            self.lastUseLabel.setStyleSheet("font-size: 13px; color: #333333; border: none; background: transparent;")
-            timeCardLayout.addWidget(self.lastUseLabel)
-            
-            layout.addWidget(timeCard)
+            layout.addWidget(timelineCard, 1)  # 时间轴占据更多空间
             
             # 添加弹性空间
             layout.addStretch()
             
             scrollArea.setWidget(contentWidget)
             mainLayout.addWidget(scrollArea)
+            
+            # 存储所有记录用于筛选
+            self.all_records = []
+        
+        def toggleDistribution(self, state):
+            """切换分类时长分布显示"""
+            self.distCard.setVisible(state == Qt.Checked)
+        
+        def quickFilter(self, timeText):
+            """快速时间筛选"""
+            now = QDate.currentDate()
+            if timeText == "今天":
+                self.startDateEdit.setDate(now)
+                self.endDateEdit.setDate(now)
+            elif timeText == "近30分":
+                self.startDateEdit.setDate(now)
+                self.endDateEdit.setDate(now)
+            elif timeText == "近1小时":
+                self.startDateEdit.setDate(now)
+                self.endDateEdit.setDate(now)
+            elif timeText == "近2小时":
+                self.startDateEdit.setDate(now)
+                self.endDateEdit.setDate(now)
+        
+        def filterTimeline(self):
+            """筛选时间轴"""
+            self.updateData()
+        
+        def copyLog(self):
+            """复制日志到剪贴板"""
+            records = self.getFilteredRecords()
+            if not records:
+                return
+            
+            log_text = ""
+            for record in records:
+                time = record.get('时间', '')
+                work_type = record.get('工作类型', '')
+                description = record.get('工作描述', '')
+                log_text += f"[{time}] [{work_type}] {description}\n"
+            
+            QApplication.clipboard().setText(log_text)
+            InfoBar.success(
+                title="复制成功",
+                content=f"已复制 {len(records)} 条记录到剪贴板",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+        
+        def getFilteredRecords(self):
+            """获取筛选后的记录"""
+            records = self.all_records.copy()
+            
+            # 按标签筛选
+            tag = self.tagFilterCombo.currentText()
+            if tag != "全部标签":
+                records = [r for r in records if r.get('工作类型') == tag]
+            
+            # 按搜索关键词筛选
+            keyword = self.searchInput.text().strip()
+            if keyword:
+                records = [r for r in records if keyword.lower() in r.get('工作描述', '').lower()]
+            
+            return records
         
         def updateData(self):
+            """更新页面数据"""
+            # 获取日期范围内的记录
+            start_date = self.startDateEdit.date().toString("yyyy-MM-dd")
+            end_date = self.endDateEdit.date().toString("yyyy-MM-dd")
+            
+            # 读取所有记录
+            all_records = read_records()
+            
+            # 筛选日期范围内的记录
+            self.all_records = [r for r in all_records if start_date <= r.get('日期', '') <= end_date]
+            
+            # 更新统计数据
+            self.updateStats()
+            
+            # 更新分类分布
+            self.updateDistribution()
+            
+            # 更新时间轴
+            self.updateTimeline()
+        
+        def updateStats(self):
             """更新统计数据"""
-            summary = get_daily_summary()
-            if summary:
-                for work_type in self.typeCards:
-                    hours = float(summary.get(f'{work_type}时长(小时)', '0'))
-                    self.typeCards[work_type].updateValue(f"{hours:.1f}h")
-                
-                max_count = 1
-                for h in range(24):
-                    count = int(summary.get(f'{h:02d}:00记录数', '0') or '0')
-                    if count > max_count:
-                        max_count = count
-                
-                for h in range(24):
-                    count = int(summary.get(f'{h:02d}:00记录数', '0') or '0')
-                    self.hourLabels[h].setText(str(count))
-                    if count > 0:
-                        intensity = count / max_count
-                        alpha = int(80 + intensity * 175)
-                        self.hourLabels[h].setStyleSheet(f"""
-                            background-color: rgba(76, 175, 80, {alpha});
-                            border-radius: 4px;
-                            padding: 4px;
-                            color: {"white" if intensity > 0.4 else "#2E7D32"};
-                            font-weight: bold;
-                            font-size: 10px;
-                            border: none;
-                        """)
-                    else:
-                        self.hourLabels[h].setStyleSheet("""
-                            background-color: #E8F5E9;
-                            border-radius: 4px;
-                            padding: 4px;
-                            color: #999999;
-                            font-weight: bold;
-                            font-size: 10px;
-                            border: none;
-                        """)
-                
-                self.firstUseLabel.setText(f"🌅 最早使用: {summary.get('最早使用时间', '--:--')}")
-                self.lastUseLabel.setText(f"🌙 最晚使用: {summary.get('最晚使用时间', '--:--')}")
+            records = self.all_records
+            
+            # 记录条数
+            self.recordCountLabel.setText(str(len(records)))
+            
+            # 专注时长（总分钟数转小时）
+            total_minutes = 0
+            for r in records:
+                try:
+                    total_minutes += float(r.get('持续时长(分钟)', '0'))
+                except:
+                    pass
+            hours = total_minutes / 60
+            self.durationLabel.setText(f"{hours:.1f}h")
+            
+            # 活跃时段（最早和最晚时间）
+            if records:
+                times = [r.get('时间', '23:59:59') for r in records]
+                earliest = min(times)
+                latest = max(times)
+                self.activeTimeLabel.setText(f"{earliest[:5]} — {latest[:5]}")
             else:
-                for card in self.typeCards.values():
-                    card.updateValue("0h")
-                for h in range(24):
-                    self.hourLabels[h].setText("0")
-                    self.hourLabels[h].setStyleSheet("""
-                        background-color: #E8F5E9;
-                        border-radius: 4px;
-                        padding: 4px;
-                        color: #999999;
+                self.activeTimeLabel.setText("--:-- — --:--")
+        
+        def updateDistribution(self):
+            """更新分类时长分布"""
+            # 清空旧内容
+            while self.distListLayout.count():
+                child = self.distListLayout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            
+            # 统计各类型时长
+            type_hours = {}
+            total_minutes = 0
+            for r in self.all_records:
+                work_type = r.get('工作类型', '其他')
+                try:
+                    minutes = float(r.get('持续时长(分钟)', '0'))
+                except:
+                    minutes = 0
+                type_hours[work_type] = type_hours.get(work_type, 0) + minutes
+                total_minutes += minutes
+            
+            # 按时长排序
+            sorted_types = sorted(type_hours.items(), key=lambda x: x[1], reverse=True)
+            
+            # 创建进度条
+            for work_type, minutes in sorted_types:
+                hours = minutes / 60
+                percentage = (minutes / total_minutes * 100) if total_minutes > 0 else 0
+                color = TYPE_COLORS.get(work_type, "#607D8B")
+                
+                # 单行容器
+                rowWidget = QWidget()
+                rowWidget.setStyleSheet("border: none; background: transparent;")
+                rowLayout = QHBoxLayout(rowWidget)
+                rowLayout.setContentsMargins(0, 0, 0, 0)
+                rowLayout.setSpacing(12)
+                
+                # 类型名称
+                nameLabel = QLabel(work_type)
+                nameLabel.setFixedWidth(50)
+                nameLabel.setStyleSheet(f"font-size: 12px; color: {color}; font-weight: bold; border: none; background: transparent;")
+                rowLayout.addWidget(nameLabel)
+                
+                # 进度条背景
+                progressBg = QFrame()
+                progressBg.setFixedHeight(8)
+                progressBg.setStyleSheet("background-color: #EDEDED; border-radius: 4px; border: none;")
+                progressBgLayout = QHBoxLayout(progressBg)
+                progressBgLayout.setContentsMargins(0, 0, 0, 0)
+                progressBgLayout.setSpacing(0)
+                
+                # 进度条填充（左对齐）
+                progressFill = QFrame()
+                progressFill.setFixedHeight(8)
+                progressFill.setStyleSheet(f"background-color: {color}; border-radius: 4px; border: none;")
+                
+                # 设置进度条宽度比例
+                fillWidth = max(4, int(300 * percentage / 100))
+                progressFill.setFixedWidth(fillWidth)
+                
+                # 添加到布局并左对齐
+                progressBgLayout.addWidget(progressFill, 0, Qt.AlignLeft)
+                progressBgLayout.addStretch(1)
+                
+                rowLayout.addWidget(progressBg, 1)
+                
+                # 时长文本
+                timeLabel = QLabel(f"{hours:.1f}h")
+                timeLabel.setFixedWidth(50)
+                timeLabel.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                timeLabel.setStyleSheet("font-size: 12px; color: #999999; border: none; background: transparent;")
+                rowLayout.addWidget(timeLabel)
+                
+                self.distListLayout.addWidget(rowWidget)
+        
+        def updateTimeline(self):
+            """更新时间轴列表"""
+            # 清空旧内容
+            while self.timelineListLayout.count():
+                child = self.timelineListLayout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+            
+            # 获取筛选后的记录
+            records = self.getFilteredRecords()
+            
+            # 按时间倒序显示（最新的在上面）
+            records = list(reversed(records))
+            
+            for i, record in enumerate(records):
+                time = record.get('时间', '')
+                work_type = record.get('工作类型', '其他')
+                description = record.get('工作描述', '')
+                duration = record.get('持续时长(分钟)', '0')
+                color = TYPE_COLORS.get(work_type, "#607D8B")
+                
+                # 计算结束时间
+                try:
+                    duration_min = float(duration)
+                    start_dt = datetime.strptime(time, '%H:%M:%S')
+                    end_dt = start_dt + timedelta(minutes=duration_min)
+                    end_time = end_dt.strftime('%H:%M:%S')
+                    time_range = f"{time[:5]} — {end_time[:5]}"
+                except:
+                    time_range = ""
+                
+                # 列表项容器
+                itemWidget = QWidget()
+                itemWidget.setStyleSheet("border: none; background: transparent;")
+                itemLayout = QHBoxLayout(itemWidget)
+                itemLayout.setContentsMargins(0, 5, 0, 5)
+                itemLayout.setSpacing(12)
+                
+                # 时间戳
+                timeLabel = QLabel(time[:5])
+                timeLabel.setFixedWidth(50)
+                timeLabel.setAlignment(Qt.AlignRight | Qt.AlignTop)
+                timeLabel.setStyleSheet("font-size: 11px; color: #999999; border: none; background: transparent;")
+                itemLayout.addWidget(timeLabel)
+                
+                # 时间轴指示器
+                indicatorWidget = QWidget()
+                indicatorWidget.setFixedWidth(20)
+                indicatorWidget.setStyleSheet("border: none; background: transparent;")
+                indicatorLayout = QVBoxLayout(indicatorWidget)
+                indicatorLayout.setContentsMargins(0, 4, 0, 0)
+                indicatorLayout.setSpacing(0)
+                
+                # 圆点
+                dot = QLabel()
+                dot.setFixedSize(10, 10)
+                dot.setStyleSheet(f"background-color: {color}; border-radius: 5px; border: none;")
+                indicatorLayout.addWidget(dot, 0, Qt.AlignHCenter)
+                
+                # 连接线（如果不是最后一个）
+                if i < len(records) - 1:
+                    line = QFrame()
+                    line.setFixedWidth(2)
+                    line.setStyleSheet("background-color: #E0E0E0; border: none;")
+                    indicatorLayout.addWidget(line, 1, Qt.AlignHCenter)
+                
+                itemLayout.addWidget(indicatorWidget)
+                
+                # 内容卡片
+                card = QFrame()
+                card.setStyleSheet("""
+                    QFrame {
+                        background-color: #FAFAFA;
+                        border-radius: 8px;
+                        border: 1px solid #F0F0F0;
+                    }
+                """)
+                cardLayout = QVBoxLayout(card)
+                cardLayout.setContentsMargins(12, 10, 12, 10)
+                cardLayout.setSpacing(8)
+                
+                # 文本内容
+                descLabel = QLabel(description)
+                descLabel.setWordWrap(True)
+                descLabel.setStyleSheet("font-size: 12px; color: #333333; border: none; background: transparent;")
+                cardLayout.addWidget(descLabel)
+                
+                # 底部标签栏
+                tagsLayout = QHBoxLayout()
+                tagsLayout.setSpacing(8)
+                
+                # 类型标签
+                typeTag = QLabel(work_type)
+                typeTag.setStyleSheet(f"""
+                    QLabel {{
+                        background-color: {color};
+                        color: white;
+                        padding: 2px 8px;
+                        border-radius: 10px;
+                        font-size: 10px;
                         font-weight: bold;
+                        border: none;
+                    }}
+                """)
+                tagsLayout.addWidget(typeTag)
+                
+                # 自动记录标签
+                autoTag = QLabel("自动记录")
+                autoTag.setStyleSheet("""
+                    QLabel {
+                        background-color: #E0E0E0;
+                        color: #666666;
+                        padding: 2px 8px;
+                        border-radius: 10px;
                         font-size: 10px;
                         border: none;
-                    """)
-                self.firstUseLabel.setText("🌅 最早使用: --:--")
-                self.lastUseLabel.setText("🌙 最晚使用: --:--")
+                    }
+                """)
+                tagsLayout.addWidget(autoTag)
+                
+                # 时间段
+                if time_range:
+                    timeRangeLabel = QLabel(time_range)
+                    timeRangeLabel.setStyleSheet("font-size: 10px; color: #CCCCCC; border: none; background: transparent;")
+                    tagsLayout.addWidget(timeRangeLabel)
+                
+                tagsLayout.addStretch()
+                cardLayout.addLayout(tagsLayout)
+                
+                itemLayout.addWidget(card, 1)
+                
+                self.timelineListLayout.addWidget(itemWidget)
+            
+            # 如果没有记录
+            if not records:
+                emptyLabel = QLabel("暂无记录")
+                emptyLabel.setAlignment(Qt.AlignCenter)
+                emptyLabel.setStyleSheet("font-size: 14px; color: #CCCCCC; padding: 40px; border: none; background: transparent;")
+                self.timelineListLayout.addWidget(emptyLabel)
 
     # ==================== 设置页面 ====================
     
@@ -1786,7 +2195,7 @@ def main():
             self.todayPage = TodayWorkPage(self)
             self.screenshotPage = ScreenshotPage(self, self)
             self.recordsPage = RecordsPage(self)
-            self.statsPage = StatsPage(self)
+            self.timelinePage = TimelinePage(self)  # 使用新的时间线页面
             self.monitorPage = MonitorPage(self)
             self.settingsPage = SettingsPage(self)
             
@@ -1794,7 +2203,7 @@ def main():
             self.addSubInterface(self.todayPage, FluentIcon.HOME, "今日工作")
             self.addSubInterface(self.screenshotPage, FluentIcon.CAMERA, "截图分析")
             self.addSubInterface(self.recordsPage, FluentIcon.DOCUMENT, "工作记录")
-            self.addSubInterface(self.statsPage, FluentIcon.PIE_SINGLE, "数据统计")
+            self.addSubInterface(self.timelinePage, FluentIcon.PIE_SINGLE, "工作时间线")  # 替换为工作时间线
             self.addSubInterface(self.monitorPage, FluentIcon.PLAY, "管理监控")
             self.addSubInterface(self.settingsPage, FluentIcon.SETTING, "设置",
                                 NavigationItemPosition.BOTTOM)
@@ -1806,7 +2215,7 @@ def main():
             # 初始化时加载数据
             self.todayPage.updateData()
             self.recordsPage.updateData()
-            self.statsPage.updateData()
+            self.timelinePage.updateData()  # 更新时间线页面
 
     # ==================== 启动应用 ====================
     
