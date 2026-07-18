@@ -38,7 +38,7 @@ def ollama_recognize():
     img_base64 = base64.b64encode(buffer).decode('utf-8')
     
     # 工作类型列表
-    work_types = ["开发", "沟通", "生活", "学习", "设计", "管理", "文档", "娱乐", "其他"]
+    work_types = ["开发", "沟通", "生活", "学习", "设计", "管理", "文档", "娱乐", "产品", "会议", "运维", "测试", "数据分析", "其他"]
     
     # 提示词：要求模型返回JSON格式的工作类型和描述
     prompt = f"""你是一个工作活动分类专家。请分析当前屏幕截图，判断正在进行的工作类型，并返回JSON格式结果。
@@ -59,7 +59,6 @@ def ollama_recognize():
 2. 沟通类：
 - 屏幕显示聊天工具（微信、飞书、钉钉、Slack、Telegram、QQ、企业微信等）正在处理工作沟通
 - 屏幕显示邮件客户端（Outlook、Foxmail等）处理工作邮件
-- 屏幕显示视频会议工具（Zoom、腾讯会议、Teams等）
 - 屏幕显示工作群聊、项目讨论、任务分配等沟通内容
 
 3. 设计类：
@@ -71,7 +70,7 @@ def ollama_recognize():
 4. 管理类：
 - 屏幕显示项目管理工具（Jira、Trello、Asana、禅道、飞书项目等）
 - 屏幕显示表格软件（Excel、Google Sheets、WPS表格等）处理数据、报表、统计
-- 屏幕显示日程安排、会议管理、任务看板
+- 屏幕显示日程安排、任务看板
 - 屏幕显示OA系统、审批流程、工作汇报
 
 5. 文档类：
@@ -99,7 +98,43 @@ def ollama_recognize():
 - 屏幕显示音乐播放器、音乐平台
 - 屏幕显示短视频平台（抖音、快手、B站娱乐区等）
 
-9. 其他类：
+9. 产品类：
+- 屏幕显示产品需求文档（PRD）、产品原型工具（Axure、墨刀等）
+- 屏幕显示产品规划、路线图、用户故事
+- 屏幕显示竞品分析、市场调研文档
+- 屏幕显示用户反馈、数据分析报告
+- 屏幕显示产品设计评审、需求评审界面
+
+10. 会议类：
+- 屏幕显示视频会议软件（Zoom、腾讯会议、飞书会议、Teams等）正在进行会议
+- 屏幕显示会议纪要、会议记录文档
+- 屏幕显示日历中的会议安排、会议邀请
+- 屏幕显示在线白板、协作工具（Miro、飞书白板等）
+
+11. 运维类：
+- 屏幕显示服务器管理工具（SSH终端、宝塔、cPanel等）
+- 屏幕显示云服务平台（阿里云、腾讯云、AWS等）
+- 屏幕显示监控系统（Grafana、Prometheus、Zabbix等）
+- 屏幕显示容器管理（Docker、Kubernetes）
+- 屏幕显示日志分析、告警系统
+- 屏幕显示网络配置、域名管理
+
+12. 测试类：
+- 屏幕显示测试工具（Postman、JMeter、Selenium等）
+- 屏幕显示测试用例管理、测试报告
+- 屏幕显示Bug跟踪系统（Jira、禅道等）
+- 屏幕显示自动化测试脚本、测试框架
+- 屏幕显示性能测试、压力测试界面
+
+13. 数据分析类：
+- 屏幕显示数据分析工具（Python/R数据分析、Jupyter Notebook等）
+- 屏幕显示BI工具（Tableau、Power BI、FineBI等）
+- 屏幕显示SQL查询界面、数据库管理工具
+- 屏幕显示数据可视化图表、仪表盘
+- 屏幕显示Excel数据透视表、数据处理
+- 屏幕显示数据报表、统计分析文档
+
+14. 其他类：
 - 无法明确判断的情况
 - 系统设置、文件管理器、计算器等工具
 - 浏览器空白页、搜索引擎首页
@@ -128,6 +163,7 @@ description撰写规则：
 聊天界面处理：
 如果截图中出现微信、飞书、钉钉、Slack、Telegram、邮件、私信、群聊等沟通界面：
 允许输出：沟通的工作主题、任务方向、可识别出的工作需求/待办/结论/进展、文件或链接的大致用途。
+以及娱乐和生活等与工作无关的也要重点输出，详细介绍做了什么事情或者玩了什么好玩的。
 禁止输出：联系人是谁、群名是什么、对方原话、聊天消息逐字内容、完整链接/账号/手机号/邮箱/订单号/密钥等。
 
 示例：
@@ -264,12 +300,12 @@ def run_and_store():
         summary['记录条数'] = str(int(summary['记录条数']) + 1)  # 记录数+1
         summary['最晚使用时间'] = current_time  # 更新最晚使用时间
         # 更新总使用时长（加上本次时长，转换为小时）
-        summary['使用时长(小时)'] = f"{float(summary['使用时长(小时)']) + duration_minutes / 60:.2f}"
-        # 更新对应工作类型的时长
-        summary[f'{work_type}时长(小时)'] = f"{float(summary[f'{work_type}时长(小时)']) + duration_minutes / 60:.2f}"
+        summary['使用时长(小时)'] = f"{float(summary.get('使用时长(小时)', '0')) + duration_minutes / 60:.2f}"
+        # 更新对应工作类型的时长（使用get方法避免KeyError）
+        summary[f'{work_type}时长(小时)'] = f"{float(summary.get(f'{work_type}时长(小时)', '0')) + duration_minutes / 60:.2f}"
         
         # 更新主要工作：取时长最长的工作类型
-        type_durations = {t: float(summary[f'{t}时长(小时)']) for t in WORK_TYPES}
+        type_durations = {t: float(summary.get(f'{t}时长(小时)', '0')) for t in WORK_TYPES}
         summary['主要工作'] = max(type_durations, key=type_durations.get)
         
         # 更新当前小时的记录条数
@@ -470,12 +506,12 @@ def run_and_store_with_interval(interval_minutes):
         summary['记录条数'] = str(int(summary['记录条数']) + 1)  # 记录数+1
         summary['最晚使用时间'] = current_time  # 更新最晚使用时间
         # 更新总使用时长（加上本次时长，转换为小时）
-        summary['使用时长(小时)'] = f"{float(summary['使用时长(小时)']) + duration_minutes / 60:.2f}"
-        # 更新对应工作类型的时长
-        summary[f'{work_type}时长(小时)'] = f"{float(summary[f'{work_type}时长(小时)']) + duration_minutes / 60:.2f}"
+        summary['使用时长(小时)'] = f"{float(summary.get('使用时长(小时)', '0')) + duration_minutes / 60:.2f}"
+        # 更新对应工作类型的时长（使用get方法避免KeyError）
+        summary[f'{work_type}时长(小时)'] = f"{float(summary.get(f'{work_type}时长(小时)', '0')) + duration_minutes / 60:.2f}"
         
         # 更新主要工作：取时长最长的工作类型
-        type_durations = {t: float(summary[f'{t}时长(小时)']) for t in WORK_TYPES}
+        type_durations = {t: float(summary.get(f'{t}时长(小时)', '0')) for t in WORK_TYPES}
         summary['主要工作'] = max(type_durations, key=type_durations.get)
         
         # 更新当前小时的记录条数
@@ -521,13 +557,14 @@ _monitor_timer = None
 
 def start_monitor(interval_minutes, ollama_host=None, callback=None):
     """
-    启动定时监控
+    启动定时监控（多线程版本）
     
     功能：
     1. 按照指定间隔定时执行截图分析
     2. 点击开始后，等待第一个间隔结束后才开始第一次截图
     3. 每次截图记录的时长固定为监控间隔时长
     4. 支持自定义 ollama 服务器地址
+    5. 使用多线程执行，不阻塞UI
     
     参数：
         interval_minutes: 监控间隔时长（分钟）
@@ -536,8 +573,12 @@ def start_monitor(interval_minutes, ollama_host=None, callback=None):
     
     返回值：无
     """
-    global _monitor_timer
-    from PyQt5.QtCore import QTimer
+    global _monitor_timer, _monitor_workers
+    from PyQt5.QtCore import QTimer, QThread, pyqtSignal
+    
+    # 初始化工作线程列表（保持引用防止被垃圾回收）
+    if '_monitor_workers' not in globals():
+        _monitor_workers = []
     
     # 如果设置了自定义 ollama 地址，更新全局配置
     if ollama_host:
@@ -546,19 +587,41 @@ def start_monitor(interval_minutes, ollama_host=None, callback=None):
     # 将分钟转换为毫秒
     interval_ms = interval_minutes * 60 * 1000
     
+    # 定义工作线程类
+    class MonitorWorker(QThread):
+        """监控工作线程"""
+        finished = pyqtSignal(dict)
+        error = pyqtSignal(str)
+        
+        def __init__(self, interval):
+            super().__init__()
+            self.interval = interval
+        
+        def run(self):
+            try:
+                result = run_and_store_with_interval(self.interval)
+                self.finished.emit(result)
+            except Exception as e:
+                self.error.emit(str(e))
+    
     # 定义定时执行的任务
     def monitor_task():
-        """定时监控任务"""
-        try:
-            # 执行截图识别并存储，使用固定的监控间隔时长
-            result = run_and_store_with_interval(interval_minutes)
-            # 如果有回调函数，调用它
-            if callback:
-                callback(result, None)
-        except Exception as e:
-            print(f"[定时监控] 截图分析失败: {e}")
-            if callback:
-                callback(None, e)
+        """定时监控任务 - 在后台线程执行"""
+        # 清理已完成的线程
+        _monitor_workers[:] = [w for w in _monitor_workers if w.isRunning()]
+        
+        # 创建并启动工作线程
+        worker = MonitorWorker(interval_minutes)
+        
+        # 连接信号
+        worker.finished.connect(lambda result: callback(result, None) if callback else None)
+        worker.error.connect(lambda err: callback(None, err) if callback else None)
+        
+        # 保持引用防止被垃圾回收
+        _monitor_workers.append(worker)
+        
+        # 启动线程
+        worker.start()
     
     # 创建定时器
     _monitor_timer = QTimer()
@@ -577,7 +640,7 @@ def stop_monitor():
     参数：无
     返回值：无
     """
-    global _monitor_timer
+    global _monitor_timer, _monitor_workers
     
     if _monitor_timer is not None:
         _monitor_timer.stop()

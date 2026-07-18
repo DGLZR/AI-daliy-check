@@ -71,7 +71,7 @@ def main():
                                  QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
                                  QSizePolicy, QPushButton, QTableWidget, QTableWidgetItem,
                                  QLineEdit, QDateEdit, QComboBox, QApplication)
-    from PyQt5.QtCore import Qt, QSize, QTimer, QDate, QPropertyAnimation, QEasingCurve, QDateTime
+    from PyQt5.QtCore import Qt, QSize, QTimer, QDate, QPropertyAnimation, QEasingCurve, QDateTime, QThread, pyqtSignal
     from PyQt5.QtGui import QFont, QColor, QPixmap, QPainter, QPainterPath, QBrush, QPen, QIcon
     from qfluentwidgets import (FluentWindow, NavigationItemPosition, StrongBodyLabel,
                                 TitleLabel, SubtitleLabel, BodyLabel, CaptionLabel,
@@ -541,15 +541,22 @@ def main():
             
             for h in range(24):
                 count = stats['hour_data'][h]
-                intensity = count / max_count
+                intensity = count / max_count if max_count > 0 else 0
                 
                 if count == 0:
-                    bg_color = "#E8F5E9"
-                    text_color = "#999999"
+                    # 无记录：浅灰色
+                    bg_color = "#F0F0F0"
+                    text_color = "#CCCCCC"
                 else:
-                    alpha = int(50 + intensity * 200)
-                    bg_color = f"rgba(76, 175, 80, {alpha})"
-                    text_color = "#FFFFFF" if intensity > 0.5 else "#2E7D32"
+                    # 从浅灰色渐变到深绿色
+                    # 浅灰色: rgb(240, 240, 240)
+                    # 深绿色: rgb(46, 125, 50)
+                    r = int(240 - (240 - 46) * intensity)
+                    g = int(240 - (240 - 125) * intensity)
+                    b = int(240 - (240 - 50) * intensity)
+                    bg_color = f"rgb({r}, {g}, {b})"
+                    # 文字颜色：浅色背景用深色字，深色背景用白色字
+                    text_color = "#FFFFFF" if intensity > 0.5 else "#333333"
                 
                 self.hourBlocks[h].setText(str(count))
                 self.hourBlocks[h].setStyleSheet(f"""
@@ -617,6 +624,25 @@ def main():
                 
                 self.monitorListLayout.addWidget(monWidget)
 
+    # ==================== 截图识别工作线程 ====================
+    
+    class ScreenshotWorker(QThread):
+        """截图识别工作线程 - 在后台执行识别任务，不阻塞UI"""
+        # 定义信号
+        finished = pyqtSignal(dict)  # 识别完成信号，传递结果
+        error = pyqtSignal(str)      # 错误信号，传递错误信息
+        
+        def run(self):
+            """线程执行函数"""
+            try:
+                # 在后台线程中执行截图识别
+                result = run_and_store()
+                # 发送完成信号
+                self.finished.emit(result)
+            except Exception as e:
+                # 发送错误信号
+                self.error.emit(str(e))
+
     # ==================== 截图分析页面 ====================
     
     class ScreenshotPage(QWidget):
@@ -634,7 +660,7 @@ def main():
             title.setStyleSheet("font-size: 14px; font-weight: bold;")
             layout.addWidget(title)
             
-            infoCard = HeaderCardWidget(self)
+            infoCard = SimpleCardWidget(self)
             infoLayout = QVBoxLayout(infoCard)
             infoLayout.setContentsMargins(15, 12, 15, 12)
             infoLayout.setSpacing(6)
@@ -715,47 +741,61 @@ def main():
             layout.addWidget(resultCard, 1)
         
         def startCapture(self):
+            """开始截图分析 - 使用多线程"""
+            # 禁用按钮，防止重复点击
             self.captureBtn.setEnabled(False)
             self.captureBtn.setText("分析中...")
             self.statusLabel.setText("正在截图并分析，请稍候...")
             self.statusLabel.setStyleSheet("color: #FF9800; font-size: 9px;")
-            QTimer.singleShot(100, self.doCapture)
+            
+            # 创建并启动工作线程
+            self.worker = ScreenshotWorker()
+            self.worker.finished.connect(self.onCaptureSuccess)
+            self.worker.error.connect(self.onCaptureError)
+            self.worker.start()
         
-        def doCapture(self):
-            try:
-                result = run_and_store()
-                self.typeValue.setText(result['type'])
-                self.descValue.setText(result['description'])
-                self.statusLabel.setText("分析完成！")
-                self.statusLabel.setStyleSheet("color: #4CAF50; font-size: 9px;")
-                
-                InfoBar.success(
-                    title="分析完成",
-                    content=f"已识别为: {result['type']}",
-                    orient=Qt.Horizontal,
-                    isClosable=True,
-                    position=InfoBarPosition.TOP,
-                    duration=3000,
-                    parent=self
-                )
-                
-                self.main_window.todayPage.updateData()
-            except Exception as e:
-                self.statusLabel.setText(f"分析失败: {str(e)}")
-                self.statusLabel.setStyleSheet("color: #F44336; font-size: 9px;")
-                
-                InfoBar.error(
-                    title="分析失败",
-                    content=str(e),
-                    orient=Qt.Horizontal,
-                    isClosable=True,
-                    position=InfoBarPosition.TOP,
-                    duration=5000,
-                    parent=self
-                )
-            finally:
-                self.captureBtn.setEnabled(True)
-                self.captureBtn.setText("开始截图分析")
+        def onCaptureSuccess(self, result):
+            """识别成功的回调函数"""
+            self.typeValue.setText(result['type'])
+            self.descValue.setText(result['description'])
+            self.statusLabel.setText("分析完成！")
+            self.statusLabel.setStyleSheet("color: #4CAF50; font-size: 9px;")
+            
+            InfoBar.success(
+                title="分析完成",
+                content=f"已识别为: {result['type']}",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self
+            )
+            
+            # 更新其他页面数据
+            self.main_window.todayPage.updateData()
+            
+            # 恢复按钮状态
+            self.captureBtn.setEnabled(True)
+            self.captureBtn.setText("开始截图分析")
+        
+        def onCaptureError(self, error_msg):
+            """识别失败的回调函数"""
+            self.statusLabel.setText(f"分析失败: {error_msg}")
+            self.statusLabel.setStyleSheet("color: #F44336; font-size: 9px;")
+            
+            InfoBar.error(
+                title="分析失败",
+                content=error_msg,
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=5000,
+                parent=self
+            )
+            
+            # 恢复按钮状态
+            self.captureBtn.setEnabled(True)
+            self.captureBtn.setText("开始截图分析")
 
     # ==================== 工作记录页面 ====================
     
@@ -925,6 +965,11 @@ def main():
         "管理": "#00BCD4",    # 青色
         "文档": "#795548",    # 棕色
         "娱乐": "#F44336",    # 红色
+        "产品": "#FF5722",    # 深橙色
+        "会议": "#3F51B5",    # 靛蓝色
+        "运维": "#009688",    # 青绿色
+        "测试": "#FFC107",    # 琥珀色
+        "数据分析": "#673AB7", # 深紫色
         "其他": "#607D8B",    # 灰蓝色
     }
     
@@ -1105,9 +1150,9 @@ def main():
             
             # 标签筛选下拉框（使用 Fluent ComboBox）
             self.tagFilterCombo = ComboBox()
-            self.tagFilterCombo.addItems(["全部标签", "开发", "沟通", "生活", "学习", "设计", "管理", "文档", "娱乐", "其他"])
+            self.tagFilterCombo.addItems(["全部标签", "开发", "沟通", "生活", "学习", "设计", "管理", "文档", "娱乐", "产品", "会议", "运维", "测试", "数据分析", "其他"])
             self.tagFilterCombo.setCurrentIndex(0)
-            self.tagFilterCombo.setFixedWidth(100)
+            self.tagFilterCombo.setFixedWidth(120)
             self.tagFilterCombo.currentTextChanged.connect(self.filterTimeline)
             toolbarLayout.addWidget(self.tagFilterCombo)
             
@@ -2121,8 +2166,8 @@ def main():
                 self.main_window.todayPage.updateData()
                 if hasattr(self.main_window, 'recordsPage'):
                     self.main_window.recordsPage.updateData()
-                if hasattr(self.main_window, 'statsPage'):
-                    self.main_window.statsPage.updateData()
+                if hasattr(self.main_window, 'timelinePage'):
+                    self.main_window.timelinePage.updateData()
 
     # ==================== 主窗口 ====================
     
@@ -2157,6 +2202,30 @@ def main():
             self.todayPage.updateData()
             self.recordsPage.updateData()
             self.timelinePage.updateData()  # 更新时间线页面
+        
+        def changeEvent(self, event):
+            """处理窗口状态变化事件"""
+            if event.type() == event.WindowStateChange:
+                # 如果窗口从最小化恢复
+                if self.windowState() == Qt.WindowNoState:
+                    self.show()
+                    self.activateWindow()
+                    self.raise_()
+            super().changeEvent(event)
+        
+        def event(self, event):
+            """处理事件，确保窗口能正常恢复"""
+            if event.type() == event.WindowStateChange:
+                if self.isMinimized():
+                    # 最小化时记录状态
+                    self._was_minimized = True
+                elif self._was_minimized:
+                    # 从最小化恢复时
+                    self._was_minimized = False
+                    self.showNormal()
+                    self.activateWindow()
+                    self.raise_()
+            return super().event(event)
 
     # ==================== 启动应用 ====================
     

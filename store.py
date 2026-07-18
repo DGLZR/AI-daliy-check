@@ -29,7 +29,7 @@ SUMMARY_FILE = os.path.join(DB_DIR, 'daily_summary.csv')
 RECORDS_FILE = os.path.join(DB_DIR, 'records.csv')
 
 # 工作类型列表，与screenshot.py中定义的类型保持一致
-WORK_TYPES = ["开发", "沟通", "生活", "学习", "设计", "管理", "文档", "娱乐", "其他"]
+WORK_TYPES = ["开发", "沟通", "生活", "学习", "设计", "管理", "文档", "娱乐", "产品", "会议", "运维", "测试", "数据分析", "其他"]
 
 
 # ==================== 初始化函数 ====================
@@ -257,15 +257,15 @@ def print_today_summary():
         # 打印各项汇总信息
         print(f"日期: {summary['日期']}")
         print(f"截图分析次数: {summary['记录条数']}")
-        print(f"使用时长: {summary['使用时长(小时)']} 小时")
-        print(f"主要工作: {summary['主要工作']}")
-        print(f"最早使用: {summary['最早使用时间']}")
-        print(f"最晚使用: {summary['最晚使用时间']}")
+        print(f"使用时长: {summary.get('使用时长(小时)', '0')} 小时")
+        print(f"主要工作: {summary.get('主要工作', '暂无')}")
+        print(f"最早使用: {summary.get('最早使用时间', '--:--')}")
+        print(f"最晚使用: {summary.get('最晚使用时间', '--:--')}")
         
         # 打印各工作类型的时长（只显示有记录的类型）
         print("\n各类工作时长:")
         for t in WORK_TYPES:
-            hours = float(summary[f'{t}时长(小时)'])
+            hours = float(summary.get(f'{t}时长(小时)', '0'))
             if hours > 0:  # 只显示时长大于0的类型
                 print(f"  {t}: {hours:.2f} 小时")
         
@@ -325,15 +325,15 @@ def print_daily_summary(date=None):
         # 打印各项汇总信息
         print(f"日期: {summary['日期']}")
         print(f"截图分析次数: {summary['记录条数']}")
-        print(f"使用时长: {summary['使用时长(小时)']} 小时")
-        print(f"主要工作: {summary['主要工作']}")
-        print(f"最早使用: {summary['最早使用时间']}")
-        print(f"最晚使用: {summary['最晚使用时间']}")
+        print(f"使用时长: {summary.get('使用时长(小时)', '0')} 小时")
+        print(f"主要工作: {summary.get('主要工作', '暂无')}")
+        print(f"最早使用: {summary.get('最早使用时间', '--:--')}")
+        print(f"最晚使用: {summary.get('最晚使用时间', '--:--')}")
         
         # 打印各工作类型的时长（只显示有记录的类型）
         print("\n各类工作时长:")
         for t in WORK_TYPES:
-            hours = float(summary[f'{t}时长(小时)'])
+            hours = float(summary.get(f'{t}时长(小时)', '0'))
             if hours > 0:  # 只显示时长大于0的类型
                 print(f"  {t}: {hours:.2f} 小时")
         
