@@ -9,6 +9,7 @@
 import sys
 import os
 import platform
+import sys; sys.setrecursionlimit(sys.getrecursionlimit() * 5)
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -217,7 +218,7 @@ def main():
             headerLayout.setSpacing(15)
             
             # 圆形头像
-            avatarPath = r"C:\Users\20057\Desktop\微信图片_20240925102439.jpg"
+            avatarPath = r"C:\Users\20057\Desktop\frog.jpg"
             avatarPixmap = create_circle_avatar(avatarPath, 60)
             avatarLabel = QLabel()
             avatarLabel.setPixmap(avatarPixmap)
@@ -1686,11 +1687,36 @@ def main():
 
     # ==================== 设置页面 ====================
     
+    class ConnectionTestWorker(QThread):
+        """连接测试工作线程"""
+        finished = pyqtSignal(bool, str)  # (success, message)
+        
+        def __init__(self, test_type, host=None, model=None):
+            super().__init__()
+            self.test_type = test_type
+            self.host = host
+            self.model = model
+        
+        def run(self):
+            try:
+                if self.test_type == "glm":
+                    success, message = test_glm_connection()
+                elif self.test_type == "ollama":
+                    if self.host:
+                        set_ollama_config(self.host, self.model)
+                    success, message = test_ollama_connection()
+                else:
+                    success, message = False, "未知的测试类型"
+                self.finished.emit(success, message)
+            except Exception as e:
+                self.finished.emit(False, str(e))
+
     class SettingsPage(QWidget):
         """设置页面"""
         def __init__(self, parent=None):
             super().__init__(parent)
             self.setObjectName("settingsPage")
+            self._test_worker = None
             
             scrollLayout = QVBoxLayout(self)
             scrollLayout.setContentsMargins(0, 0, 0, 0)
@@ -1982,8 +2008,20 @@ def main():
                 set_use_glm(False)
         
         def testGlmConnection(self):
-            """测试GLM连接"""
-            success, message = test_glm_connection()
+            """测试GLM连接（多线程）"""
+            self.glmTestBtn.setEnabled(False)
+            self.glmTestBtn.setText("测试中...")
+            self.glmStatusLabel.setText("⏳ 正在测试连接...")
+            self.glmStatusLabel.setStyleSheet("color: #FF9800; font-size: 11px; border: none; background: transparent;")
+            
+            self._test_worker = ConnectionTestWorker("glm")
+            self._test_worker.finished.connect(self.onGlmTestFinished)
+            self._test_worker.start()
+        
+        def onGlmTestFinished(self, success, message):
+            """GLM测试完成回调"""
+            self.glmTestBtn.setEnabled(True)
+            self.glmTestBtn.setText("🔗 测试 GLM 连接")
             if success:
                 self.glmStatusLabel.setText(f"✅ {message}")
                 self.glmStatusLabel.setStyleSheet("color: #4CAF50; font-size: 11px; border: none; background: transparent;")
@@ -2011,15 +2049,27 @@ def main():
             )
         
         def testOllamaConnection(self):
-            """测试Ollama连接"""
+            """测试Ollama连接（多线程）"""
             host = self.ollamaHostInput.text().strip()
             model = self.ollamaModelInput.text().strip()
             if not host:
                 host = "http://192.168.31.23:11434"
             if not model:
                 model = "minicpm-v4.6"
-            set_ollama_config(host, model)
-            success, message = test_ollama_connection()
+            
+            self.ollamaTestBtn.setEnabled(False)
+            self.ollamaTestBtn.setText("测试中...")
+            self.ollamaStatusLabel.setText("⏳ 正在测试连接...")
+            self.ollamaStatusLabel.setStyleSheet("color: #FF9800; font-size: 11px; border: none; background: transparent;")
+            
+            self._test_worker = ConnectionTestWorker("ollama", host, model)
+            self._test_worker.finished.connect(self.onOllamaTestFinished)
+            self._test_worker.start()
+        
+        def onOllamaTestFinished(self, success, message):
+            """Ollama测试完成回调"""
+            self.ollamaTestBtn.setEnabled(True)
+            self.ollamaTestBtn.setText("🔗 测试 Ollama 连接")
             if success:
                 self.ollamaStatusLabel.setText(f"✅ {message}")
                 self.ollamaStatusLabel.setStyleSheet("color: #4CAF50; font-size: 11px; border: none; background: transparent;")
@@ -2057,7 +2107,12 @@ def main():
         def updateTestStatus(self):
             """更新测试模式状态显示"""
             if is_test_mode():
-                photo_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'photo')
+                import sys
+                if getattr(sys, 'frozen', False):
+                    base_dir = os.path.dirname(sys.executable)
+                else:
+                    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                photo_dir = os.path.join(base_dir, 'data', 'photo')
                 file_count = 0
                 if os.path.exists(photo_dir):
                     file_count = len([f for f in os.listdir(photo_dir) if f.endswith('.png')])
@@ -2490,7 +2545,7 @@ def main():
             self.trayIcon = QSystemTrayIcon(self)
             
             # 使用指定的图片作为图标
-            icon_path = r"C:\Users\20057\Desktop\微信图片_20240925102439.jpg"
+            icon_path = r"C:\Users\20057\Desktop\frog.jpg"
             if os.path.exists(icon_path):
                 # 加载图片并缩放为图标大小
                 pixmap = QPixmap(icon_path)

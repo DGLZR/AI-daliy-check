@@ -1,0 +1,25 @@
+# 工作日报助手 - 依赖包列表
+# 使用方法: pip install -r requirements.txt
+
+# GUI框架
+PyQt5>=5.15.0
+PyQt5-Frameless-Window>=0.8.0
+PyQt-Fluent-Widgets>=1.10.0
+
+# 图像处理
+opencv-python>=4.6.0
+numpy>=1.24.0
+Pillow>=9.0.0
+
+# 屏幕截图
+mss>=9.0.0
+
+# AI模型调用
+ollama>=0.4.0
+
+# 主题检测
+darkdetect>=0.8.0
+
+# GLM API (可选，用于GLM通用模型)
+# 安装命令: pip install zai
+# 或者: pip install zhipuai

@@ -19,8 +19,14 @@ import time
 
 # ==================== 配置常量 ====================
 
-# 数据库文件夹路径：在当前脚本所在目录下的data文件夹
-DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+# 数据库文件夹路径：打包后在exe同级目录，开发时在脚本所在目录
+import sys
+if getattr(sys, 'frozen', False):
+    # 打包后的exe环境
+    DB_DIR = os.path.join(os.path.dirname(sys.executable), 'data')
+else:
+    # 开发环境
+    DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 
 # 每日汇总CSV文件路径
 SUMMARY_FILE = os.path.join(DB_DIR, 'daily_summary.csv')

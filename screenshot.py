@@ -8,7 +8,6 @@ import os
 import json
 from datetime import datetime
 import store
-
 # ==================== 配置变量 ====================
 
 # GLM API配置
@@ -32,7 +31,12 @@ def set_test_mode(enabled):
     _test_mode = enabled
     if enabled:
         # 创建photo文件夹
-        photo_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'photo')
+        import sys
+        if getattr(sys, 'frozen', False):
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+        photo_dir = os.path.join(base_dir, 'data', 'photo')
         os.makedirs(photo_dir, exist_ok=True)
 
 
@@ -46,7 +50,12 @@ def save_screenshot(img, record_id):
     if not _test_mode:
         return
     
-    photo_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'photo')
+    import sys
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    photo_dir = os.path.join(base_dir, 'data', 'photo')
     os.makedirs(photo_dir, exist_ok=True)
     
     # 生成文件名: ID_日期_时间.png
@@ -270,7 +279,7 @@ description撰写规则：
 def glm_recognize():
     """调用GLM API识别截图内容，返回工作类型和描述"""
     import tempfile
-    from zai import ZhipuAiClient
+    from zhipuai import ZhipuAI as ZhipuAiClient
     
     # 截图
     img = capture_screen()
@@ -433,7 +442,7 @@ def recognize():
 def test_glm_connection():
     """测试GLM连接"""
     try:
-        from zai import ZhipuAiClient
+        from zhipuai import ZhipuAI as ZhipuAiClient
         client = ZhipuAiClient(api_key=GLM_API_KEY)
         response = client.chat.completions.create(
             model=GLM_MODEL,

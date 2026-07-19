@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['UI\\main_fluent.py'],
+    ['E:\\AI\\UI\\main_fluent.py'],
     pathex=[],
     binaries=[],
-    datas=[('UI/styles.qss', 'UI'), ('UI/main_window.ui', 'UI')],
-    hiddenimports=['PyQt5', 'PyQt5.QtWidgets', 'PyQt5.QtCore', 'PyQt5.QtGui', 'qfluentwidgets', 'cv2', 'numpy', 'mss', 'ollama', 'csv', 'json', 'base64'],
+    datas=[],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -19,26 +19,21 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.datas,
     [],
-    exclude_binaries=True,
-    name='工作日报助手',
+    name='WorkDiary',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-)
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='工作日报助手',
+    icon=['C:\\Users\\20057\\Desktop\\frog.ico'],
 )
