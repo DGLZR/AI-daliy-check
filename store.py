@@ -146,6 +146,9 @@ def write_summary(summaries):
         summaries: 字典，key为日期，value为汇总数据字典
     返回值：无
     """
+    # 确保目录存在
+    os.makedirs(DB_DIR, exist_ok=True)
+    
     # 定义表头
     headers = ['日期', '记录条数', '使用时长(小时)', '主要工作', '最早使用时间', '最晚使用时间']
     headers += [f'{t}时长(小时)' for t in WORK_TYPES]
@@ -171,6 +174,9 @@ def write_records(records):
         records: 列表，每个元素是一条记录的字典
     返回值：无
     """
+    # 确保目录存在
+    os.makedirs(DB_DIR, exist_ok=True)
+    
     # 定义表头
     headers = ['ID', '日期', '时间', '工作类型', '工作描述', '持续时长(分钟)']
     
@@ -463,6 +469,9 @@ def write_templates(templates):
     参数：
         templates: 列表，每个元素是一个模板字典
     """
+    # 确保目录存在
+    os.makedirs(os.path.dirname(TEMPLATES_FILE), exist_ok=True)
+    
     headers = ['name', 'intro', 'desc', 'is_cloud', 'prompt']
     
     with open(TEMPLATES_FILE, 'w', newline='', encoding='utf-8-sig') as f:
