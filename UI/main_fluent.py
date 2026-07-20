@@ -73,7 +73,7 @@ def main():
                                  QSizePolicy, QPushButton, QTableWidget, QTableWidgetItem,
                                  QLineEdit, QDateEdit, QComboBox, QApplication,
                                  QMessageBox, QSystemTrayIcon, QMenu, QAction, QDialog,
-                                 QTextEdit, QLayout, QSplitter)
+                                 QTextEdit, QLayout, QSplitter, QTextBrowser)
     from PyQt5.QtCore import Qt, QSize, QTimer, QDate, QPropertyAnimation, QEasingCurve, QDateTime, QThread, pyqtSignal, QRect, QPoint
     from PyQt5.QtGui import QFont, QColor, QPixmap, QPainter, QPainterPath, QBrush, QPen, QIcon
     from qfluentwidgets import (FluentWindow, NavigationItemPosition, StrongBodyLabel,
@@ -2520,6 +2520,8 @@ def main():
     
     class ReportResultDialog(QDialog):
         """报告生成结果弹窗（4.4）- 支持流式输出"""
+        report_generated = pyqtSignal()  # 报告生成完成信号
+        
         def __init__(self, report_type, date_range, template_name, template_prompt, parent=None):
             super().__init__(parent)
             self.report_type = report_type
@@ -2717,6 +2719,14 @@ def main():
             self.full_content = content
             self.contentEdit.setPlainText(content)
             
+            # 保存报告到文件
+            from store import save_report
+            title = f"工作{self.report_type} — {self.date_range}"
+            save_report(title, content, self.report_type, self.template_name)
+            
+            # 发送报告生成完成信号
+            self.report_generated.emit()
+            
             # 更新UI
             self.titleLabel.setText(f"{self.report_type}报告生成完成")
             self.statusTag.setText("已完成")
@@ -2892,6 +2902,8 @@ def main():
     
     class ReportPage(QWidget):
         """生成报告页面"""
+        report_generated = pyqtSignal()  # 报告生成完成信号
+        
         def __init__(self, parent=None):
             super().__init__(parent)
             self.setObjectName("reportPage")
@@ -3675,6 +3687,7 @@ def main():
             
             # 打开结果弹窗（会自动启动生成）
             dialog = ReportResultDialog(report_type, date_range, template_name, template_prompt, self)
+            dialog.report_generated.connect(self.report_generated.emit)
             dialog.exec_()
         
         def goToHistory(self):
@@ -3706,6 +3719,1447 @@ def main():
                 self.finished.emit(success, message)
             except Exception as e:
                 self.finished.emit(False, str(e))
+
+    # ==================== 历史报告页面 ====================
+    
+    # 示例报告数据
+    SAMPLE_REPORTS = [
+        {
+            "title": "工作周报 — 2026-07-20 至 2026-07-26",
+            "type": "周报",
+            "status": "已完成",
+            "time": "今日 10:38",
+            "word_count": 2070,
+            "output_method": "直接输出",
+            "model": "默认模型"
+        },
+        {
+            "title": "工作日报 — 2026-07-04",
+            "type": "日报",
+            "status": "已完成",
+            "time": "07月04日 17:42",
+            "word_count": 1136,
+            "output_method": "直接输出",
+            "model": "默认模型"
+        },
+        {
+            "title": "工作周报 — 2026-06-29 至 2026-07-05",
+            "type": "周报",
+            "status": "已完成",
+            "time": "06月29日 12:26",
+            "word_count": 2388,
+            "output_method": "直接输出",
+            "model": "默认模型"
+        },
+        {
+            "title": "工作周报 — 2026-06-15 至 2026-06-22",
+            "type": "周报",
+            "status": "已完成",
+            "time": "06月22日 14:59",
+            "word_count": 3579,
+            "output_method": "直接输出",
+            "model": "默认模型"
+        },
+        {
+            "title": "工作日报 — 2026-06-18",
+            "type": "日报",
+            "status": "已完成",
+            "time": "06月18日 23:33",
+            "word_count": 2374,
+            "output_method": "直接输出",
+            "model": "默认模型"
+        },
+        {
+            "title": "工作日报 — 2026-06-17",
+            "type": "日报",
+            "status": "已完成",
+            "time": "06月17日 18:20",
+            "word_count": 1856,
+            "output_method": "直接输出",
+            "model": "默认模型"
+        }
+    ]
+    
+    class ReportItemWidget(QFrame):
+        """报告条目控件"""
+        view_clicked = pyqtSignal(dict)  # 查看信号
+        copy_clicked = pyqtSignal(dict)  # 复制信号
+        export_clicked = pyqtSignal(dict)  # 导出信号
+        delete_clicked = pyqtSignal(dict)  # 删除信号
+        
+        def __init__(self, report_data, parent=None):
+            super().__init__(parent)
+            self.report_data = report_data
+            self.setStyleSheet("QFrame { border: none; background: transparent; }")
+            
+            layout = QHBoxLayout(self)
+            layout.setContentsMargins(20, 16, 20, 16)
+            layout.setSpacing(16)
+            
+            # 左侧信息区
+            infoLayout = QVBoxLayout()
+            infoLayout.setSpacing(8)
+            
+            # 标题行
+            titleLayout = QHBoxLayout()
+            titleLayout.setSpacing(8)
+            
+            titleLabel = QLabel(report_data["title"])
+            titleLabel.setStyleSheet("font-size: 14px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            titleLayout.addWidget(titleLabel)
+            
+            # 类型标签
+            report_type = report_data["type"]
+            if report_type == "周报":
+                typeTag = QLabel(report_type)
+                typeTag.setStyleSheet("""
+                    QLabel {
+                        background-color: #e0f2fe;
+                        color: #0284c7;
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-size: 11px;
+                        font-weight: bold;
+                        border: none;
+                    }
+                """)
+            else:
+                typeTag = QLabel(report_type)
+                typeTag.setStyleSheet("""
+                    QLabel {
+                        background-color: #dcfce7;
+                        color: #16a34a;
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-size: 11px;
+                        font-weight: bold;
+                        border: none;
+                    }
+                """)
+            titleLayout.addWidget(typeTag)
+            
+            # 状态标签
+            statusTag = QLabel(report_data["status"])
+            statusTag.setStyleSheet("""
+                QLabel {
+                    background-color: #dcfce7;
+                    color: #16a34a;
+                    padding: 2px 8px;
+                    border-radius: 4px;
+                    font-size: 11px;
+                    font-weight: bold;
+                    border: none;
+                }
+            """)
+            titleLayout.addWidget(statusTag)
+            titleLayout.addStretch()
+            
+            infoLayout.addLayout(titleLayout)
+            
+            # 元信息行
+            metaText = f"{report_data['time']} · {report_data['word_count']} 字 · {report_data['output_method']} · {report_data['model']}"
+            metaLabel = QLabel(metaText)
+            metaLabel.setStyleSheet("font-size: 12px; color: #9ca3af; border: none; background: transparent;")
+            infoLayout.addWidget(metaLabel)
+            
+            layout.addLayout(infoLayout, 1)
+            
+            # 右侧操作区
+            actionLayout = QHBoxLayout()
+            actionLayout.setSpacing(16)
+            
+            # 查看按钮
+            viewBtn = QPushButton("👁 查看")
+            viewBtn.setCursor(Qt.PointingHandCursor)
+            viewBtn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    color: #6b7280;
+                    border: none;
+                    font-size: 12px;
+                    padding: 4px 8px;
+                }
+                QPushButton:hover {
+                    color: #16a34a;
+                }
+            """)
+            viewBtn.clicked.connect(lambda: self.view_clicked.emit(self.report_data))
+            actionLayout.addWidget(viewBtn)
+            
+            # 复制按钮
+            copyBtn = QPushButton("📋 复制")
+            copyBtn.setCursor(Qt.PointingHandCursor)
+            copyBtn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    color: #6b7280;
+                    border: none;
+                    font-size: 12px;
+                    padding: 4px 8px;
+                }
+                QPushButton:hover {
+                    color: #16a34a;
+                }
+            """)
+            copyBtn.clicked.connect(lambda: self.copy_clicked.emit(self.report_data))
+            actionLayout.addWidget(copyBtn)
+            
+            # 导出按钮
+            exportBtn = QPushButton("📥 导出")
+            exportBtn.setCursor(Qt.PointingHandCursor)
+            exportBtn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    color: #6b7280;
+                    border: none;
+                    font-size: 12px;
+                    padding: 4px 8px;
+                }
+                QPushButton:hover {
+                    color: #16a34a;
+                }
+            """)
+            exportBtn.clicked.connect(lambda: self.export_clicked.emit(self.report_data))
+            actionLayout.addWidget(exportBtn)
+            
+            # 删除按钮
+            deleteBtn = QPushButton("🗑 删除")
+            deleteBtn.setCursor(Qt.PointingHandCursor)
+            deleteBtn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    color: #6b7280;
+                    border: none;
+                    font-size: 12px;
+                    padding: 4px 8px;
+                }
+                QPushButton:hover {
+                    color: #ef4444;
+                }
+            """)
+            deleteBtn.clicked.connect(lambda: self.delete_clicked.emit(self.report_data))
+            actionLayout.addWidget(deleteBtn)
+            
+            layout.addLayout(actionLayout)
+    
+    class ReportDrawer(QWidget):
+        """报告详情抽屉面板"""
+        closed = pyqtSignal()  # 关闭信号
+        
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.setVisible(False)
+            self.report_data = None
+            self.is_editing = False
+            self.raw_content = ""  # 原始Markdown内容
+            
+            # 遮罩层
+            self.overlay = QWidget(parent)
+            self.overlay.setStyleSheet("background-color: rgba(0, 0, 0, 0.35);")
+            self.overlay.setVisible(False)
+            self.overlay.installEventFilter(self)
+            
+            # 抽屉主体
+            self.drawer = QWidget(self)
+            self.drawer.setStyleSheet("""
+                QWidget {
+                    background-color: white;
+                    border-top-left-radius: 16px;
+                    border-bottom-left-radius: 16px;
+                }
+            """)
+            
+            # 添加阴影效果
+            shadow = QGraphicsDropShadowEffect(self.drawer)
+            shadow.setBlurRadius(30)
+            shadow.setXOffset(-10)
+            shadow.setYOffset(0)
+            shadow.setColor(QColor(0, 0, 0, 80))
+            self.drawer.setGraphicsEffect(shadow)
+            
+            # 抽屉内部布局
+            drawerLayout = QVBoxLayout(self.drawer)
+            drawerLayout.setContentsMargins(0, 0, 0, 0)
+            drawerLayout.setSpacing(0)
+            
+            # ========== 头部区 ==========
+            headerWidget = QWidget()
+            headerWidget.setStyleSheet("""
+                QWidget {
+                    background-color: white;
+                    border-top-left-radius: 16px;
+                    border-bottom: 1px solid #e5e7eb;
+                }
+            """)
+            headerLayout = QVBoxLayout(headerWidget)
+            headerLayout.setContentsMargins(32, 24, 32, 24)
+            headerLayout.setSpacing(12)
+            
+            # 标题行
+            titleRow = QHBoxLayout()
+            titleRow.setSpacing(8)
+            
+            self.titleLabel = QLabel("")
+            self.titleLabel.setStyleSheet("""
+                QLabel {
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: #1a1a1a;
+                    border: none;
+                    background: transparent;
+                }
+            """)
+            titleRow.addWidget(self.titleLabel, 1)
+            
+            # 编辑按钮
+            editTitleBtn = QPushButton("✏️")
+            editTitleBtn.setFixedSize(28, 28)
+            editTitleBtn.setCursor(Qt.PointingHandCursor)
+            editTitleBtn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    border: none;
+                    font-size: 14px;
+                    color: #9ca3af;
+                }
+                QPushButton:hover {
+                    color: #374151;
+                }
+            """)
+            titleRow.addWidget(editTitleBtn)
+            
+            # 关闭按钮
+            closeBtn = QPushButton("✕")
+            closeBtn.setFixedSize(32, 32)
+            closeBtn.setCursor(Qt.PointingHandCursor)
+            closeBtn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    border: none;
+                    font-size: 18px;
+                    color: #9ca3af;
+                }
+                QPushButton:hover {
+                    color: #374151;
+                }
+            """)
+            closeBtn.clicked.connect(self.close)
+            titleRow.addWidget(closeBtn)
+            
+            headerLayout.addLayout(titleRow)
+            
+            # 标签 + 元信息行
+            metaRow = QHBoxLayout()
+            metaRow.setSpacing(8)
+            
+            self.typeTag = QLabel("")
+            self.typeTag.setStyleSheet("""
+                QLabel {
+                    background-color: #e0f2fe;
+                    color: #0284c7;
+                    padding: 2px 8px;
+                    border-radius: 4px;
+                    font-size: 11px;
+                    font-weight: bold;
+                    border: none;
+                }
+            """)
+            metaRow.addWidget(self.typeTag)
+            
+            self.metaLabel = QLabel("")
+            self.metaLabel.setStyleSheet("""
+                QLabel {
+                    font-size: 12px;
+                    color: #9ca3af;
+                    border: none;
+                    background: transparent;
+                }
+            """)
+            metaRow.addWidget(self.metaLabel)
+            metaRow.addStretch()
+            
+            headerLayout.addLayout(metaRow)
+            
+            drawerLayout.addWidget(headerWidget)
+            
+            # ========== 内容滚动区 ==========
+            # 预览模式（QTextBrowser）
+            self.contentBrowser = QTextBrowser()
+            self.contentBrowser.setStyleSheet("""
+                QTextBrowser {
+                    border: none;
+                    background: white;
+                    font-size: 14px;
+                    color: #1f2937;
+                    padding: 32px 40px;
+                }
+            """)
+            self.contentBrowser.setOpenExternalLinks(False)
+            self.contentBrowser.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self.contentBrowser.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            drawerLayout.addWidget(self.contentBrowser, 1)
+            
+            # 编辑模式（QTextEdit）- 默认隐藏
+            self.contentEdit = QTextEdit()
+            self.contentEdit.setStyleSheet("""
+                QTextEdit {
+                    border: none;
+                    background: white;
+                    font-size: 14px;
+                    color: #1f2937;
+                    padding: 32px 40px;
+                    font-family: Consolas, monospace;
+                }
+            """)
+            self.contentEdit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self.contentEdit.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            self.contentEdit.setVisible(False)
+            drawerLayout.addWidget(self.contentEdit, 1)
+            
+            # ========== 底部操作栏 ==========
+            footerWidget = QWidget()
+            footerWidget.setStyleSheet("""
+                QWidget {
+                    background-color: white;
+                    border-bottom-left-radius: 16px;
+                    border-top: 1px solid #e5e7eb;
+                }
+            """)
+            footerLayout = QHBoxLayout(footerWidget)
+            footerLayout.setContentsMargins(32, 16, 32, 16)
+            footerLayout.setSpacing(12)
+            footerLayout.addStretch()
+            
+            # 网页报告按钮（带角标）
+            webBtnContainer = QWidget()
+            webBtnContainer.setStyleSheet("background: transparent; border: none;")
+            webBtnLayout = QHBoxLayout(webBtnContainer)
+            webBtnLayout.setContentsMargins(0, 0, 0, 0)
+            
+            webBtn = QPushButton("🌐 网页报告")
+            webBtn.setCursor(Qt.PointingHandCursor)
+            webBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 8px 16px;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    font-size: 13px;
+                }
+                QPushButton:hover {
+                    background-color: #f9fafb;
+                }
+            """)
+            webBtnLayout.addWidget(webBtn)
+            
+            # 增值角标
+            badge = QLabel("增值")
+            badge.setStyleSheet("""
+                QLabel {
+                    background-color: #dcfce7;
+                    color: #16a34a;
+                    padding: 1px 6px;
+                    border-radius: 8px;
+                    font-size: 10px;
+                    font-weight: bold;
+                    border: none;
+                }
+            """)
+            badge.setParent(webBtn)
+            badge.move(webBtn.width() - 15, -5)
+            
+            footerLayout.addWidget(webBtnContainer)
+            
+            # 编辑按钮
+            self.editBtn = QPushButton("✏️ 编辑")
+            self.editBtn.setCursor(Qt.PointingHandCursor)
+            self.editBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 8px 16px;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    font-size: 13px;
+                }
+                QPushButton:hover {
+                    background-color: #f9fafb;
+                }
+            """)
+            self.editBtn.clicked.connect(self.toggleEdit)
+            footerLayout.addWidget(self.editBtn)
+            
+            # 复制全文按钮
+            copyBtn = QPushButton("📋 复制全文")
+            copyBtn.setCursor(Qt.PointingHandCursor)
+            copyBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 8px 16px;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    font-size: 13px;
+                }
+                QPushButton:hover {
+                    background-color: #f9fafb;
+                }
+            """)
+            copyBtn.clicked.connect(self.copyContent)
+            footerLayout.addWidget(copyBtn)
+            
+            # 导出按钮
+            exportBtn = QPushButton("📥 导出")
+            exportBtn.setCursor(Qt.PointingHandCursor)
+            exportBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 8px 16px;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    font-size: 13px;
+                }
+                QPushButton:hover {
+                    background-color: #f9fafb;
+                }
+            """)
+            exportBtn.clicked.connect(self.exportContent)
+            footerLayout.addWidget(exportBtn)
+            
+            drawerLayout.addWidget(footerWidget)
+        
+        def eventFilter(self, obj, event):
+            """事件过滤器，点击遮罩关闭抽屉"""
+            if obj == self.overlay and event.type() == event.MouseButtonPress:
+                self.close()
+                return True
+            return super().eventFilter(obj, event)
+        
+        def open(self, report_data):
+            """打开抽屉"""
+            self.report_data = report_data
+            self.is_editing = False
+            
+            # 更新头部信息
+            self.titleLabel.setText(report_data.get('title', ''))
+            
+            # 更新类型标签
+            report_type = report_data.get('type', '日报')
+            if report_type == "周报":
+                self.typeTag.setText("周报")
+                self.typeTag.setStyleSheet("""
+                    QLabel {
+                        background-color: #e0f2fe;
+                        color: #0284c7;
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-size: 11px;
+                        font-weight: bold;
+                        border: none;
+                    }
+                """)
+            else:
+                self.typeTag.setText("日报")
+                self.typeTag.setStyleSheet("""
+                    QLabel {
+                        background-color: #dcfce7;
+                        color: #16a34a;
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        font-size: 11px;
+                        font-weight: bold;
+                        border: none;
+                    }
+                """)
+            
+            # 更新元信息
+            meta_text = f"{report_data.get('time', '')} · {report_data.get('word_count', 0)} 字 · {report_data.get('output_method', '')} · {report_data.get('model', '')}"
+            self.metaLabel.setText(meta_text)
+            
+            # 读取报告内容
+            from store import read_report
+            self.raw_content = read_report(report_data.get('filepath', ''))
+            
+            # 将 Markdown 转换为 HTML
+            html_content = self.markdown_to_html(self.raw_content)
+            self.contentBrowser.setHtml(html_content)
+            self.contentEdit.setPlainText(self.raw_content)
+            
+            # 确保显示预览模式
+            self.contentBrowser.setVisible(True)
+            self.contentEdit.setVisible(False)
+            self.editBtn.setText("✏️ 编辑")
+            
+            # 调整大小和位置
+            parent = self.parent()
+            if parent:
+                self.setGeometry(parent.rect())
+                self.overlay.setGeometry(parent.rect())
+                
+                drawer_width = int(parent.width() * 0.55)
+                drawer_width = min(max(drawer_width, 600), 900)
+                self.drawer.setGeometry(
+                    parent.width() - drawer_width,
+                    0,
+                    drawer_width,
+                    parent.height()
+                )
+            
+            # 显示
+            self.overlay.show()
+            self.overlay.raise_()
+            self.show()
+            self.raise_()
+            self.drawer.raise_()
+        
+        def toggleEdit(self):
+            """切换编辑/预览模式"""
+            if self.is_editing:
+                # 从编辑模式切换到预览模式
+                self.raw_content = self.contentEdit.toPlainText()
+                html_content = self.markdown_to_html(self.raw_content)
+                self.contentBrowser.setHtml(html_content)
+                
+                self.contentEdit.setVisible(False)
+                self.contentBrowser.setVisible(True)
+                self.editBtn.setText("✏️ 编辑")
+                self.is_editing = False
+            else:
+                # 从预览模式切换到编辑模式
+                self.contentEdit.setPlainText(self.raw_content)
+                
+                self.contentBrowser.setVisible(False)
+                self.contentEdit.setVisible(True)
+                self.editBtn.setText("👁 预览")
+                self.is_editing = True
+        
+        def close(self):
+            """关闭抽屉"""
+            self.is_editing = False
+            self.contentBrowser.setVisible(True)
+            self.contentEdit.setVisible(False)
+            self.hide()
+            self.overlay.hide()
+            self.closed.emit()
+        
+        def markdown_to_html(self, markdown_text):
+            """将 Markdown 转换为 HTML"""
+            import re
+            
+            html = markdown_text
+            
+            # 转义 HTML 特殊字符
+            html = html.replace('&', '&amp;')
+            html = html.replace('<', '&lt;')
+            html = html.replace('>', '&gt;')
+            
+            # 代码块
+            html = re.sub(r'```(\w*)\n(.*?)```', r'<pre><code>\2</code></pre>', html, flags=re.DOTALL)
+            
+            # 行内代码
+            html = re.sub(r'`([^`]+)`', r'<code style="background-color: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-family: Consolas, monospace; font-size: 13px;">\1</code>', html)
+            
+            # 标题
+            html = re.sub(r'^### (.+)$', r'<h3 style="font-size: 16px; font-weight: bold; color: #1a1a1a; margin-top: 24px; margin-bottom: 12px;">\1</h3>', html, flags=re.MULTILINE)
+            html = re.sub(r'^## (.+)$', r'<h2 style="font-size: 18px; font-weight: bold; color: #1a1a1a; margin-top: 28px; margin-bottom: 14px;">\1</h2>', html, flags=re.MULTILINE)
+            html = re.sub(r'^# (.+)$', r'<h1 style="font-size: 22px; font-weight: bold; color: #1a1a1a; margin-top: 32px; margin-bottom: 16px;">\1</h1>', html, flags=re.MULTILINE)
+            
+            # 粗体
+            html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
+            
+            # 无序列表
+            html = re.sub(r'^- (.+)$', r'<li style="margin-left: 20px; margin-bottom: 8px;">\1</li>', html, flags=re.MULTILINE)
+            
+            # 有序列表
+            html = re.sub(r'^(\d+)\. (.+)$', r'<li style="margin-left: 20px; margin-bottom: 8px;">\2</li>', html, flags=re.MULTILINE)
+            
+            # 水平线
+            html = re.sub(r'^---$', '<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">', html, flags=re.MULTILINE)
+            
+            # 段落
+            html = re.sub(r'\n\n', '</p><p style="margin-bottom: 16px; line-height: 1.8;">', html)
+            
+            # 包装在 div 中
+            html = f'''
+            <div style="font-family: "Microsoft YaHei", sans-serif; color: #1f2937; line-height: 1.8;">
+                <p style="margin-bottom: 16px;">{html}</p>
+            </div>
+            '''
+            
+            return html
+        
+        def copyContent(self):
+            """复制内容"""
+            if self.report_data:
+                from store import read_report
+                content = read_report(self.report_data.get('filepath', ''))
+                QApplication.clipboard().setText(content)
+                
+                InfoBar.success(
+                    title="复制成功",
+                    content="报告内容已复制到剪贴板",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+        
+        def exportContent(self):
+            """导出内容"""
+            if self.report_data:
+                from PyQt5.QtWidgets import QFileDialog
+                file_path, _ = QFileDialog.getSaveFileName(
+                    self, "导出报告",
+                    f"{self.report_data.get('title', '报告')}.md",
+                    "Markdown Files (*.md);;All Files (*)"
+                )
+                if file_path:
+                    from store import read_report
+                    content = read_report(self.report_data.get('filepath', ''))
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    
+                    InfoBar.success(
+                        title="导出成功",
+                        content=f"报告已保存到: {file_path}",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+        
+        def resizeEvent(self, event):
+            """窗口大小变化时更新布局"""
+            super().resizeEvent(event)
+            parent = self.parent()
+            if parent and self.isVisible():
+                self.setGeometry(parent.rect())
+                self.overlay.setGeometry(parent.rect())
+                
+                drawer_width = int(parent.width() * 0.55)
+                drawer_width = min(max(drawer_width, 600), 900)
+                self.drawer.setGeometry(
+                    parent.width() - drawer_width,
+                    0,
+                    drawer_width,
+                    parent.height()
+                )
+    
+    class HistoryReportPage(QWidget):
+        """历史报告页面"""
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.setObjectName("historyReportPage")
+            self.current_page = 1
+            self.items_per_page = 5
+            self.reports = self.loadReports()
+            self.total_pages = max(1, (len(self.reports) + self.items_per_page - 1) // self.items_per_page)
+            self.drawer = None
+            
+            # 主布局
+            mainLayout = QVBoxLayout(self)
+            mainLayout.setContentsMargins(24, 24, 24, 24)
+            mainLayout.setSpacing(24)
+            
+            # ========== 顶部说明文字 ==========
+            descLabel = QLabel("查看和管理所有 AI 生成的报告，支持按类型筛选和关键词搜索")
+            descLabel.setStyleSheet("font-size: 13px; color: #9ca3af; border: none; background: transparent;")
+            mainLayout.addWidget(descLabel)
+            
+            # ========== 筛选面板 ==========
+            filterPanel = QFrame()
+            filterPanel.setStyleSheet("""
+                QFrame {
+                    background-color: #f7f8fa;
+                    border-radius: 12px;
+                    border: none;
+                }
+            """)
+            filterLayout = QVBoxLayout(filterPanel)
+            filterLayout.setContentsMargins(20, 16, 20, 16)
+            filterLayout.setSpacing(16)
+            
+            # 第一行：类型选择 + 搜索
+            firstRowLayout = QHBoxLayout()
+            firstRowLayout.setSpacing(16)
+            
+            # 报告类型分段按钮
+            typeGroupLayout = QHBoxLayout()
+            typeGroupLayout.setSpacing(0)
+            typeGroupLayout.setContentsMargins(0, 0, 0, 0)
+            
+            self.typeButtons = []
+            for i, text in enumerate(["全部", "日报", "周报", "月报"]):
+                btn = QPushButton(text)
+                btn.setCheckable(True)
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.setFixedHeight(36)
+                btn.setProperty("type", text)
+                btn.clicked.connect(lambda checked, idx=i: self.selectType(idx))
+                
+                if i == 0:
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: #16a34a;
+                            color: white;
+                            border: 1px solid #16a34a;
+                            padding: 0 16px;
+                            font-size: 13px;
+                            font-weight: bold;
+                            border-top-left-radius: 8px;
+                            border-bottom-left-radius: 8px;
+                            border-top-right-radius: 0px;
+                            border-bottom-right-radius: 0px;
+                        }
+                    """)
+                elif i == 3:
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: white;
+                            color: #374151;
+                            border: 1px solid #e5e7eb;
+                            padding: 0 16px;
+                            font-size: 13px;
+                            border-top-left-radius: 0px;
+                            border-bottom-left-radius: 0px;
+                            border-top-right-radius: 8px;
+                            border-bottom-right-radius: 8px;
+                        }
+                        QPushButton:hover {
+                            background-color: #f9fafb;
+                        }
+                    """)
+                else:
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: white;
+                            color: #374151;
+                            border: 1px solid #e5e7eb;
+                            border-left: none;
+                            padding: 0 16px;
+                            font-size: 13px;
+                            border-radius: 0px;
+                        }
+                        QPushButton:hover {
+                            background-color: #f9fafb;
+                        }
+                    """)
+                
+                self.typeButtons.append(btn)
+                typeGroupLayout.addWidget(btn)
+            
+            firstRowLayout.addLayout(typeGroupLayout)
+            firstRowLayout.addStretch()
+            
+            # 搜索框 + 刷新按钮
+            searchLayout = QHBoxLayout()
+            searchLayout.setSpacing(8)
+            
+            # 使用 Fluent SearchLineEdit
+            self.searchInput = SearchLineEdit()
+            self.searchInput.setPlaceholderText("搜索报告...")
+            self.searchInput.setFixedWidth(300)
+            self.searchInput.textChanged.connect(self.onSearch)
+            searchLayout.addWidget(self.searchInput)
+            
+            # 刷新按钮
+            refreshBtn = QPushButton("🔄")
+            refreshBtn.setFixedSize(36, 36)
+            refreshBtn.setCursor(Qt.PointingHandCursor)
+            refreshBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    font-size: 16px;
+                }
+                QPushButton:hover {
+                    background-color: #f9fafb;
+                }
+            """)
+            refreshBtn.clicked.connect(self.refreshList)
+            searchLayout.addWidget(refreshBtn)
+            
+            firstRowLayout.addLayout(searchLayout)
+            filterLayout.addLayout(firstRowLayout)
+            
+            # 第二行：快捷日期 + 日期范围
+            secondRowLayout = QHBoxLayout()
+            secondRowLayout.setSpacing(16)
+            
+            # 日期标签
+            dateLabel = QLabel("日期")
+            dateLabel.setStyleSheet("font-size: 13px; color: #6b7280; border: none; background: transparent;")
+            secondRowLayout.addWidget(dateLabel)
+            
+            # 快捷日期分段按钮
+            quickDateLayout = QHBoxLayout()
+            quickDateLayout.setSpacing(0)
+            
+            self.quickDateButtons = []
+            for i, text in enumerate(["本周", "本月", "最近7天", "最近30天"]):
+                btn = QPushButton(text)
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.setFixedHeight(36)
+                btn.setProperty("range", text)
+                btn.clicked.connect(lambda checked, t=text: self.selectQuickDate(t))
+                
+                if i == 0:
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: white;
+                            color: #374151;
+                            border: 1px solid #e5e7eb;
+                            padding: 0 12px;
+                            font-size: 12px;
+                            border-top-left-radius: 8px;
+                            border-bottom-left-radius: 8px;
+                            border-top-right-radius: 0px;
+                            border-bottom-right-radius: 0px;
+                        }
+                        QPushButton:hover {
+                            background-color: #f9fafb;
+                        }
+                    """)
+                elif i == 3:
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: white;
+                            color: #374151;
+                            border: 1px solid #e5e7eb;
+                            border-left: none;
+                            padding: 0 12px;
+                            font-size: 12px;
+                            border-top-left-radius: 0px;
+                            border-bottom-left-radius: 0px;
+                            border-top-right-radius: 8px;
+                            border-bottom-right-radius: 8px;
+                        }
+                        QPushButton:hover {
+                            background-color: #f9fafb;
+                        }
+                    """)
+                else:
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: white;
+                            color: #374151;
+                            border: 1px solid #e5e7eb;
+                            border-left: none;
+                            padding: 0 12px;
+                            font-size: 12px;
+                            border-radius: 0px;
+                        }
+                        QPushButton:hover {
+                            background-color: #f9fafb;
+                        }
+                    """)
+                
+                self.quickDateButtons.append(btn)
+                quickDateLayout.addWidget(btn)
+            
+            secondRowLayout.addLayout(quickDateLayout)
+            secondRowLayout.addStretch()
+            
+            # 日期范围选择器（使用 Fluent CalendarPicker）
+            dateRangeLayout = QHBoxLayout()
+            dateRangeLayout.setSpacing(8)
+            
+            self.startDateEdit = CalendarPicker()
+            self.startDateEdit.setDate(QDate.currentDate())
+            self.startDateEdit.setDateFormat("yyyy/MM/dd")
+            self.startDateEdit.setFixedWidth(140)
+            self.startDateEdit.dateChanged.connect(self.validateDateRange)
+            dateRangeLayout.addWidget(self.startDateEdit)
+            
+            toLabel = QLabel("至")
+            toLabel.setStyleSheet("font-size: 13px; color: #6b7280; border: none; background: transparent;")
+            dateRangeLayout.addWidget(toLabel)
+            
+            self.endDateEdit = CalendarPicker()
+            self.endDateEdit.setDate(QDate.currentDate())
+            self.endDateEdit.setDateFormat("yyyy/MM/dd")
+            self.endDateEdit.setFixedWidth(140)
+            self.endDateEdit.dateChanged.connect(self.validateDateRange)
+            dateRangeLayout.addWidget(self.endDateEdit)
+            
+            secondRowLayout.addLayout(dateRangeLayout)
+            filterLayout.addLayout(secondRowLayout)
+            
+            mainLayout.addWidget(filterPanel)
+            
+            # ========== 报告列表面板 ==========
+            listPanel = QFrame()
+            listPanel.setStyleSheet("""
+                QFrame {
+                    background-color: white;
+                    border-radius: 12px;
+                    border: 1px solid #f3f4f6;
+                }
+            """)
+            listPanelLayout = QVBoxLayout(listPanel)
+            listPanelLayout.setContentsMargins(0, 0, 0, 0)
+            listPanelLayout.setSpacing(0)
+            
+            # 表头行
+            headerLayout = QHBoxLayout()
+            headerLayout.setContentsMargins(20, 16, 20, 16)
+            
+            headerLeftLayout = QHBoxLayout()
+            headerLeftLayout.setSpacing(8)
+            
+            docIcon = QLabel("📄")
+            docIcon.setStyleSheet("border: none; background: transparent;")
+            headerLeftLayout.addWidget(docIcon)
+            
+            headerTitle = QLabel("报告列表")
+            headerTitle.setStyleSheet("font-size: 15px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            headerLeftLayout.addWidget(headerTitle)
+            
+            headerLayout.addLayout(headerLeftLayout)
+            headerLayout.addStretch()
+            
+            self.totalCountLabel = QLabel(f"共 {len(self.reports)} 份")
+            self.totalCountLabel.setStyleSheet("font-size: 13px; color: #9ca3af; border: none; background: transparent;")
+            headerLayout.addWidget(self.totalCountLabel)
+            
+            listPanelLayout.addLayout(headerLayout)
+            
+            # 分隔线
+            separator = QFrame()
+            separator.setFrameShape(QFrame.HLine)
+            separator.setStyleSheet("background-color: #f3f4f6; border: none; height: 1px;")
+            listPanelLayout.addWidget(separator)
+            
+            # 报告列表（可滚动）
+            self.listScrollArea = QScrollArea()
+            self.listScrollArea.setWidgetResizable(True)
+            self.listScrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self.listScrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self.listScrollArea.setStyleSheet("QScrollArea { border: none; background: transparent; } QScrollBar { width: 0px; height: 0px; }")
+            
+            self.listWidget = QWidget()
+            self.listWidget.setStyleSheet("background: transparent; border: none;")
+            self.listLayout = QVBoxLayout(self.listWidget)
+            self.listLayout.setContentsMargins(0, 0, 0, 0)
+            self.listLayout.setSpacing(0)
+            
+            self.listScrollArea.setWidget(self.listWidget)
+            listPanelLayout.addWidget(self.listScrollArea, 1)
+            
+            # 底部分页控件
+            paginationLayout = QHBoxLayout()
+            paginationLayout.setContentsMargins(20, 16, 20, 16)
+            paginationLayout.setSpacing(8)
+            
+            # 上一页按钮
+            self.prevBtn = QPushButton("‹")
+            self.prevBtn.setFixedSize(36, 36)
+            self.prevBtn.setCursor(Qt.PointingHandCursor)
+            self.prevBtn.setEnabled(False)
+            self.prevBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    font-size: 18px;
+                    color: #9ca3af;
+                }
+                QPushButton:hover:enabled {
+                    background-color: #f9fafb;
+                    color: #374151;
+                }
+                QPushButton:disabled {
+                    background-color: #f9fafb;
+                    color: #d1d5db;
+                }
+            """)
+            self.prevBtn.clicked.connect(self.prevPage)
+            paginationLayout.addWidget(self.prevBtn)
+            
+            # 页码按钮容器
+            self.pageButtonsContainer = QWidget()
+            self.pageButtonsContainer.setStyleSheet("background: transparent; border: none;")
+            self.pageButtonsLayout = QHBoxLayout(self.pageButtonsContainer)
+            self.pageButtonsLayout.setContentsMargins(0, 0, 0, 0)
+            self.pageButtonsLayout.setSpacing(8)
+            paginationLayout.addWidget(self.pageButtonsContainer)
+            
+            # 页码按钮列表
+            self.pageButtons = []
+            
+            # 下一页按钮
+            self.nextBtn = QPushButton("›")
+            self.nextBtn.setFixedSize(36, 36)
+            self.nextBtn.setCursor(Qt.PointingHandCursor)
+            self.nextBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 8px;
+                    font-size: 18px;
+                    color: #374151;
+                }
+                QPushButton:hover {
+                    background-color: #f9fafb;
+                }
+            """)
+            self.nextBtn.clicked.connect(self.nextPage)
+            paginationLayout.addWidget(self.nextBtn)
+            
+            paginationLayout.addStretch()
+            
+            listPanelLayout.addLayout(paginationLayout)
+            
+            # 初始化列表（在分页按钮创建之后）
+            self.refreshList()
+            
+            mainLayout.addWidget(listPanel, 1)
+        
+        def setDrawer(self, drawer):
+            """设置报告抽屉引用"""
+            self.drawer = drawer
+        
+        def loadReports(self):
+            """从文件夹加载报告列表"""
+            from store import get_report_list
+            return get_report_list()
+        
+        def selectType(self, index):
+            """选择报告类型"""
+            self.current_type_index = index
+            for i, btn in enumerate(self.typeButtons):
+                if i == index:
+                    btn.setChecked(True)
+                    if i == 0:
+                        btn.setStyleSheet("""
+                            QPushButton {
+                                background-color: #16a34a;
+                                color: white;
+                                border: 1px solid #16a34a;
+                                padding: 0 16px;
+                                font-size: 13px;
+                                font-weight: bold;
+                                border-top-left-radius: 8px;
+                                border-bottom-left-radius: 8px;
+                                border-top-right-radius: 0px;
+                                border-bottom-right-radius: 0px;
+                            }
+                        """)
+                    elif i == len(self.typeButtons) - 1:
+                        btn.setStyleSheet("""
+                            QPushButton {
+                                background-color: #16a34a;
+                                color: white;
+                                border: 1px solid #16a34a;
+                                padding: 0 16px;
+                                font-size: 13px;
+                                font-weight: bold;
+                                border-top-left-radius: 0px;
+                                border-bottom-left-radius: 0px;
+                                border-top-right-radius: 8px;
+                                border-bottom-right-radius: 8px;
+                            }
+                        """)
+                    else:
+                        btn.setStyleSheet("""
+                            QPushButton {
+                                background-color: #16a34a;
+                                color: white;
+                                border: 1px solid #16a34a;
+                                padding: 0 16px;
+                                font-size: 13px;
+                                font-weight: bold;
+                                border-radius: 0px;
+                            }
+                        """)
+                else:
+                    btn.setChecked(False)
+                    if i == 0:
+                        btn.setStyleSheet("""
+                            QPushButton {
+                                background-color: white;
+                                color: #374151;
+                                border: 1px solid #e5e7eb;
+                                padding: 0 16px;
+                                font-size: 13px;
+                                border-top-left-radius: 8px;
+                                border-bottom-left-radius: 8px;
+                                border-top-right-radius: 0px;
+                                border-bottom-right-radius: 0px;
+                            }
+                            QPushButton:hover {
+                                background-color: #f9fafb;
+                            }
+                        """)
+                    elif i == 3:
+                        btn.setStyleSheet("""
+                            QPushButton {
+                                background-color: white;
+                                color: #374151;
+                                border: 1px solid #e5e7eb;
+                                padding: 0 16px;
+                                font-size: 13px;
+                                border-top-left-radius: 0px;
+                                border-bottom-left-radius: 0px;
+                                border-top-right-radius: 8px;
+                                border-bottom-right-radius: 8px;
+                            }
+                            QPushButton:hover {
+                                background-color: #f9fafb;
+                            }
+                        """)
+                    else:
+                        btn.setStyleSheet("""
+                            QPushButton {
+                                background-color: white;
+                                color: #374151;
+                                border: 1px solid #e5e7eb;
+                                border-left: none;
+                                padding: 0 16px;
+                                font-size: 13px;
+                                border-radius: 0px;
+                            }
+                            QPushButton:hover {
+                                background-color: #f9fafb;
+                            }
+                        """)
+            
+            self.refreshList()
+        
+        def validateDateRange(self):
+            """验证日期范围"""
+            if self.startDateEdit.date > self.endDateEdit.date:
+                InfoBar.warning(
+                    title="日期范围错误",
+                    content="开始日期不能晚于结束日期",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+        
+        def selectQuickDate(self, text):
+            """选择快捷日期"""
+            today = QDate.currentDate()
+            if text == "本周":
+                monday = today.addDays(-(today.dayOfWeek() - 1))
+                self.startDateEdit.setDate(monday)
+                self.endDateEdit.setDate(today)
+            elif text == "本月":
+                first = QDate(today.year(), today.month(), 1)
+                self.startDateEdit.setDate(first)
+                self.endDateEdit.setDate(today)
+            elif text == "最近7天":
+                self.startDateEdit.setDate(today.addDays(-6))
+                self.endDateEdit.setDate(today)
+            elif text == "最近30天":
+                self.startDateEdit.setDate(today.addDays(-29))
+                self.endDateEdit.setDate(today)
+        
+        def onSearch(self, text):
+            """搜索报告"""
+            self.refreshList()
+        
+        def refreshList(self):
+            """刷新报告列表"""
+            # 重新加载报告数据
+            all_reports = self.loadReports()
+            
+            # 按类型筛选
+            type_filter = ["全部", "日报", "周报", "月报"]
+            current_type = type_filter[self.current_type_index] if hasattr(self, 'current_type_index') else "全部"
+            
+            if current_type == "全部":
+                self.reports = all_reports
+            else:
+                self.reports = [r for r in all_reports if r.get('type') == current_type]
+            
+            self.total_pages = max(1, (len(self.reports) + self.items_per_page - 1) // self.items_per_page)
+            
+            # 如果当前页超过总页数，重置为第一页
+            if self.current_page > self.total_pages:
+                self.current_page = 1
+            
+            # 清空现有条目
+            while self.listLayout.count():
+                item = self.listLayout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            
+            # 计算当前页的报告范围
+            start_idx = (self.current_page - 1) * self.items_per_page
+            end_idx = min(start_idx + self.items_per_page, len(self.reports))
+            current_reports = self.reports[start_idx:end_idx]
+            
+            # 添加报告条目
+            for report in current_reports:
+                itemWidget = ReportItemWidget(report)
+                itemWidget.view_clicked.connect(self.onViewReport)
+                itemWidget.copy_clicked.connect(self.onCopyReport)
+                itemWidget.export_clicked.connect(self.onExportReport)
+                itemWidget.delete_clicked.connect(self.onDeleteReport)
+                self.listLayout.addWidget(itemWidget)
+                
+                # 分隔线
+                separator = QFrame()
+                separator.setFrameShape(QFrame.HLine)
+                separator.setStyleSheet("background-color: #f3f4f6; border: none; height: 1px;")
+                self.listLayout.addWidget(separator)
+            
+            self.listLayout.addStretch()
+            
+            # 更新总数
+            self.totalCountLabel.setText(f"共 {len(self.reports)} 份")
+            
+            # 重建页码按钮
+            self.rebuildPageButtons()
+            
+            # 更新分页状态
+            self.updatePagination()
+        
+        def rebuildPageButtons(self):
+            """重建页码按钮"""
+            # 清空现有页码按钮
+            for btn in self.pageButtons:
+                btn.deleteLater()
+            self.pageButtons.clear()
+            
+            # 清空容器布局
+            while self.pageButtonsLayout.count():
+                item = self.pageButtonsLayout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            
+            # 创建新的页码按钮
+            for i in range(1, self.total_pages + 1):
+                btn = QPushButton(str(i))
+                btn.setFixedSize(36, 36)
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.setProperty("page", i)
+                btn.clicked.connect(lambda checked, p=i: self.goToPage(p))
+                self.pageButtons.append(btn)
+                self.pageButtonsLayout.addWidget(btn)
+        
+        def goToPage(self, page):
+            """跳转到指定页"""
+            self.current_page = page
+            self.updatePagination()
+        
+        def prevPage(self):
+            """上一页"""
+            if self.current_page > 1:
+                self.current_page -= 1
+                self.updatePagination()
+        
+        def nextPage(self):
+            """下一页"""
+            if self.current_page < self.total_pages:
+                self.current_page += 1
+                self.updatePagination()
+        
+        def updatePagination(self):
+            """更新分页状态"""
+            # 更新页码按钮样式
+            for i, btn in enumerate(self.pageButtons):
+                page = i + 1
+                if page == self.current_page:
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: #16a34a;
+                            color: white;
+                            border: 1px solid #16a34a;
+                            border-radius: 8px;
+                            font-size: 14px;
+                            font-weight: bold;
+                        }
+                    """)
+                else:
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: white;
+                            color: #374151;
+                            border: 1px solid #e5e7eb;
+                            border-radius: 8px;
+                            font-size: 14px;
+                        }
+                        QPushButton:hover {
+                            background-color: #f9fafb;
+                        }
+                    """)
+            
+            # 更新箭头按钮状态
+            self.prevBtn.setEnabled(self.current_page > 1)
+            self.nextBtn.setEnabled(self.current_page < self.total_pages)
+        
+        def onViewReport(self, report):
+            """查看报告"""
+            if self.drawer:
+                self.drawer.open(report)
+        
+        def onCopyReport(self, report):
+            """复制报告"""
+            QApplication.clipboard().setText(report['title'])
+            InfoBar.success(
+                title="复制成功",
+                content="报告内容已复制到剪贴板",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+        
+        def onExportReport(self, report):
+            """导出报告"""
+            from PyQt5.QtWidgets import QFileDialog
+            from store import read_report
+            
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "导出报告",
+                f"{report['title']}.md",
+                "Markdown Files (*.md);;All Files (*)"
+            )
+            if file_path:
+                content = read_report(report.get('filepath', ''))
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                InfoBar.success(
+                    title="导出成功",
+                    content=f"报告已保存到: {file_path}",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+        
+        def onDeleteReport(self, report):
+            """删除报告"""
+            reply = QMessageBox.question(
+                self, "确认删除",
+                f"确定要删除报告「{report['title']}」吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self.reports.remove(report)
+                self.refreshList()
+                InfoBar.success(
+                    title="删除成功",
+                    content=f"报告已删除",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
 
     class SettingsPage(QWidget):
         """设置页面"""
@@ -4503,6 +5957,9 @@ def main():
             super().__init__()
             init_db()
             
+            # 创建报告抽屉
+            self.reportDrawer = ReportDrawer(self)
+            
             # 创建所有页面
             self.todayPage = TodayWorkPage(self)
             self.screenshotPage = ScreenshotPage(self, self)
@@ -4510,12 +5967,20 @@ def main():
             self.timelinePage = TimelinePage(self)
             self.monitorPage = MonitorPage(self)
             self.reportPage = ReportPage(self)
+            self.historyReportPage = HistoryReportPage(self)
             self.settingsPage = SettingsPage(self)
+            
+            # 设置历史报告页面的抽屉引用
+            self.historyReportPage.setDrawer(self.reportDrawer)
+            
+            # 连接报告生成完成信号到历史报告页面刷新
+            self.reportPage.report_generated.connect(self.historyReportPage.refreshList)
             
             # 添加导航项
             self.addSubInterface(self.todayPage, FluentIcon.HOME, "今日工作")
             self.addSubInterface(self.timelinePage, FluentIcon.PIE_SINGLE, "工作时间线")
             self.addSubInterface(self.reportPage, FluentIcon.DOCUMENT, "生成报告")
+            self.addSubInterface(self.historyReportPage, FluentIcon.HISTORY, "历史报告")
             self.addSubInterface(self.monitorPage, FluentIcon.PLAY, "管理监控")
             self.addSubInterface(self.recordsPage, FluentIcon.DOCUMENT, "工作记录（内测）")
             self.addSubInterface(self.screenshotPage, FluentIcon.CAMERA, "截图分析（内测）")

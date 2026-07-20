@@ -568,3 +568,167 @@ def import_templates(file_path):
     except Exception as e:
         print(f"导入模板失败: {e}")
         return []
+
+
+# ==================== 报告文件管理 ====================
+
+# 报告文件夹路径
+REPORT_DIR = os.path.join(DB_DIR, 'report')
+
+
+def init_report_dir():
+    """初始化报告文件夹"""
+    if not os.path.exists(REPORT_DIR):
+        os.makedirs(REPORT_DIR)
+        print(f"已创建报告文件夹: {REPORT_DIR}")
+
+
+def save_report(title, content, report_type="日报", template_name="默认"):
+    """
+    保存报告为 .md 文件
+    
+    参数：
+        title: 报告标题
+        content: 报告内容
+        report_type: 报告类型（日报/周报/月报）
+        template_name: 使用的模板名称
+    
+    返回值：
+        保存的文件路径
+    """
+    init_report_dir()
+    
+    # 生成文件名：日期_时间_类型.md
+    now = datetime.now()
+    filename = f"{now.strftime('%Y%m%d_%H%M%S')}_{report_type}.md"
+    filepath = os.path.join(REPORT_DIR, filename)
+    
+    # 生成报告内容
+    report_content = f"""# {title}
+
+**生成时间：** {now.strftime('%Y-%m-%d %H:%M:%S')}
+**报告类型：** {report_type}
+**使用模板：** {template_name}
+
+---
+
+{content}
+"""
+    
+    # 保存文件
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(report_content)
+    
+    print(f"报告已保存: {filepath}")
+    return filepath
+
+
+def get_report_list():
+    """
+    获取报告列表
+    
+    返回值：
+        列表，每个元素是报告信息字典
+    """
+    init_report_dir()
+    
+    reports = []
+    
+    # 遍历报告文件夹
+    for filename in os.listdir(REPORT_DIR):
+        if filename.endswith('.md'):
+            filepath = os.path.join(REPORT_DIR, filename)
+            
+            # 读取文件内容获取元信息
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # 解析元信息
+                title = filename.replace('.md', '')
+                report_type = "日报"
+                generate_time = ""
+                template_name = "默认"
+                word_count = len(content)
+                
+                # 简单解析标题
+                lines = content.split('\n')
+                for line in lines:
+                    if line.startswith('# '):
+                        title = line[2:].strip()
+                    if '**报告类型：**' in line:
+                        report_type = line.split('：')[-1].strip()
+                    if '**生成时间：**' in line:
+                        generate_time = line.split('：')[-1].strip()
+                    if '**使用模板：**' in line:
+                        template_name = line.split('：')[-1].strip()
+                
+                # 格式化时间
+                if generate_time:
+                    try:
+                        dt = datetime.strptime(generate_time, '%Y-%m-%d %H:%M:%S')
+                        today = datetime.now().strftime('%Y-%m-%d')
+                        if dt.strftime('%Y-%m-%d') == today:
+                            generate_time = f"今日 {dt.strftime('%H:%M')}"
+                        else:
+                            generate_time = dt.strftime('%m月%d日 %H:%M')
+                    except:
+                        pass
+                
+                reports.append({
+                    'filename': filename,
+                    'filepath': filepath,
+                    'title': title,
+                    'type': report_type,
+                    'status': '已完成',
+                    'time': generate_time,
+                    'word_count': word_count,
+                    'output_method': '直接输出',
+                    'model': template_name
+                })
+            except Exception as e:
+                print(f"读取报告失败 {filename}: {e}")
+    
+    # 按文件名排序（最新的在前面）
+    reports.sort(key=lambda x: x['filename'], reverse=True)
+    
+    return reports
+
+
+def read_report(filepath):
+    """
+    读取报告内容
+    
+    参数：
+        filepath: 报告文件路径
+    
+    返回值：
+        报告内容字符串
+    """
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        print(f"读取报告失败: {e}")
+        return ""
+
+
+def delete_report(filepath):
+    """
+    删除报告文件
+    
+    参数：
+        filepath: 报告文件路径
+    
+    返回值：
+        布尔值，表示是否删除成功
+    """
+    try:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            print(f"报告已删除: {filepath}")
+            return True
+        return False
+    except Exception as e:
+        print(f"删除报告失败: {e}")
+        return False
