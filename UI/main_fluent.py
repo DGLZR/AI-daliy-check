@@ -1419,6 +1419,19 @@ def main():
             start_date = self.startDatePicker.date.toString("yyyy-MM-dd")
             end_date = self.endDatePicker.date.toString("yyyy-MM-dd")
             
+            # 验证日期范围
+            if self.startDatePicker.date > self.endDatePicker.date:
+                InfoBar.warning(
+                    title="日期范围错误",
+                    content="开始日期不能晚于结束日期",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                return
+            
             # 读取所有记录
             all_records = read_records()
             
@@ -1562,6 +1575,7 @@ def main():
             
             for i, record in enumerate(records):
                 time = record.get('时间', '')
+                date = record.get('日期', '')
                 work_type = record.get('工作类型', '其他')
                 description = record.get('工作描述', '')
                 duration = record.get('持续时长(分钟)', '0')
@@ -1577,6 +1591,15 @@ def main():
                 except:
                     time_range = ""
                 
+                # 格式化日期显示（月-日）
+                date_display = ""
+                if date:
+                    try:
+                        date_obj = datetime.strptime(date, '%Y-%m-%d')
+                        date_display = date_obj.strftime('%m/%d')
+                    except:
+                        date_display = ""
+                
                 # 列表项容器
                 itemWidget = QWidget()
                 itemWidget.setStyleSheet("border: none; background: transparent;")
@@ -1584,9 +1607,9 @@ def main():
                 itemLayout.setContentsMargins(0, 5, 0, 5)
                 itemLayout.setSpacing(12)
                 
-                # 时间戳
-                timeLabel = QLabel(time[:5])
-                timeLabel.setFixedWidth(50)
+                # 时间戳（包含日期和时间）
+                timeLabel = QLabel(f"{date_display}\n{time[:5]}")
+                timeLabel.setFixedWidth(55)
                 timeLabel.setAlignment(Qt.AlignRight | Qt.AlignTop)
                 timeLabel.setStyleSheet("font-size: 11px; color: #999999; border: none; background: transparent;")
                 itemLayout.addWidget(timeLabel)
@@ -3022,6 +3045,7 @@ def main():
             self.startDateEdit.setDate(QDate.currentDate())
             self.startDateEdit.setDateFormat("yyyy/MM/dd")
             self.startDateEdit.setFixedWidth(140)
+            self.startDateEdit.dateChanged.connect(self.updatePreviewDate)
             dateLayout.addWidget(self.startDateEdit)
             
             toLabel = QLabel("至")
@@ -3032,6 +3056,7 @@ def main():
             self.endDateEdit.setDate(QDate.currentDate())
             self.endDateEdit.setDateFormat("yyyy/MM/dd")
             self.endDateEdit.setFixedWidth(140)
+            self.endDateEdit.dateChanged.connect(self.updatePreviewDate)
             dateLayout.addWidget(self.endDateEdit)
             
             timeRangeLayout.addLayout(dateLayout)
@@ -3303,6 +3328,19 @@ def main():
         
         def updatePreviewDate(self):
             """更新预览日期"""
+            # 验证日期范围
+            if self.startDateEdit.date > self.endDateEdit.date:
+                InfoBar.warning(
+                    title="日期范围错误",
+                    content="开始日期不能晚于结束日期",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                return
+            
             start = self.startDateEdit.date.toString("yyyy-MM-dd")
             end = self.endDateEdit.date.toString("yyyy-MM-dd")
             self.previewDateLabel.setText(f"时间范围：{start} 至 {end}")
@@ -3486,6 +3524,19 @@ def main():
         
         def onGenerate(self):
             """开始生成报告"""
+            # 验证日期范围
+            if self.startDateEdit.date > self.endDateEdit.date:
+                InfoBar.warning(
+                    title="日期范围错误",
+                    content="开始日期不能晚于结束日期",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                return
+            
             dialog = GenerateConfirmDialog(self)
             dialog.stay_here.connect(self.simulateGenerate)
             dialog.go_history.connect(self.goToHistory)
