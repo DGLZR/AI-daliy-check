@@ -72,7 +72,8 @@ def main():
                                  QGraphicsDropShadowEffect, QGraphicsOpacityEffect,
                                  QSizePolicy, QPushButton, QTableWidget, QTableWidgetItem,
                                  QLineEdit, QDateEdit, QComboBox, QApplication,
-                                 QMessageBox, QSystemTrayIcon, QMenu, QAction, QDialog)
+                                 QMessageBox, QSystemTrayIcon, QMenu, QAction, QDialog,
+                                 QTextEdit)
     from PyQt5.QtCore import Qt, QSize, QTimer, QDate, QPropertyAnimation, QEasingCurve, QDateTime, QThread, pyqtSignal
     from PyQt5.QtGui import QFont, QColor, QPixmap, QPainter, QPainterPath, QBrush, QPen, QIcon
     from qfluentwidgets import (FluentWindow, NavigationItemPosition, StrongBodyLabel,
@@ -1685,6 +1686,1833 @@ def main():
                 emptyLabel.setStyleSheet("font-size: 14px; color: #CCCCCC; padding: 40px; border: none; background: transparent;")
                 self.timelineListLayout.addWidget(emptyLabel)
 
+    # ==================== 报告模板数据 ====================
+    
+    # 从 store 模块加载报告模板
+    from store import read_templates, write_templates, add_template, delete_template, export_templates, import_templates
+    REPORT_TEMPLATES = read_templates()
+    
+    # ==================== 报告生成工作线程 ====================
+    
+    class ReportGenerateWorker(QThread):
+        """报告生成工作线程"""
+        chunk_received = pyqtSignal(str)  # 接收到一块内容
+        generation_finished = pyqtSignal(str)  # 生成完成
+        generation_error = pyqtSignal(str)  # 生成出错
+        
+        def __init__(self, template_prompt, start_date, end_date, report_type):
+            super().__init__()
+            self.template_prompt = template_prompt
+            self.start_date = start_date
+            self.end_date = end_date
+            self.report_type = report_type
+            self.full_content = ""
+        
+        def run(self):
+            try:
+                def on_chunk(chunk, is_finished):
+                    if chunk:
+                        self.full_content += chunk
+                        self.chunk_received.emit(chunk)
+                    if is_finished:
+                        self.generation_finished.emit(self.full_content)
+                
+                from screenshot import generate_report_stream
+                generate_report_stream(
+                    self.template_prompt,
+                    self.start_date,
+                    self.end_date,
+                    self.report_type,
+                    callback=on_chunk
+                )
+            
+            except Exception as e:
+                self.generation_error.emit(str(e))
+    
+    # ==================== 生成报告页面 ====================
+    
+    class TemplateCard(QFrame):
+        """模板卡片组件"""
+        clicked = pyqtSignal(int)  # 点击信号，传递模板索引
+        preview_clicked = pyqtSignal(int)  # 预览按钮点击信号
+        delete_clicked = pyqtSignal(int)  # 删除按钮点击信号
+        
+        def __init__(self, index, name, intro, is_cloud=True, parent=None):
+            super().__init__(parent)
+            self.index = index
+            self.is_selected = False
+            self.is_hovered = False
+            self.setFixedSize(280, 140)
+            self.setCursor(Qt.PointingHandCursor)
+            self.setMouseTracking(True)
+            
+            # 主布局
+            layout = QVBoxLayout(self)
+            layout.setContentsMargins(16, 14, 16, 14)
+            layout.setSpacing(8)
+            
+            # 标题行
+            titleLayout = QHBoxLayout()
+            titleLabel = QLabel(name)
+            titleLabel.setStyleSheet("font-size: 14px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            titleLayout.addWidget(titleLabel)
+            titleLayout.addStretch()
+            
+            # 选中对勾图标（默认隐藏）
+            self.checkIcon = QLabel("✓")
+            self.checkIcon.setFixedSize(20, 20)
+            self.checkIcon.setAlignment(Qt.AlignCenter)
+            self.checkIcon.setStyleSheet("""
+                QLabel {
+                    background-color: #16A34A;
+                    color: white;
+                    border-radius: 10px;
+                    font-size: 12px;
+                    font-weight: bold;
+                    border: none;
+                }
+            """)
+            self.checkIcon.setVisible(False)
+            titleLayout.addWidget(self.checkIcon)
+            layout.addLayout(titleLayout)
+            
+            # 简介
+            introLabel = QLabel(intro)
+            introLabel.setWordWrap(True)
+            introLabel.setMaximumHeight(40)
+            introLabel.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
+            introLabel.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            layout.addWidget(introLabel)
+            
+            layout.addStretch()
+            
+            # 底部标签行
+            tagLayout = QHBoxLayout()
+            if is_cloud:
+                tag = QLabel("云端")
+                tag.setStyleSheet("""
+                    QLabel {
+                        background-color: #E3F7EA;
+                        color: #16A34A;
+                        padding: 2px 8px;
+                        border-radius: 10px;
+                        font-size: 10px;
+                        font-weight: bold;
+                        border: none;
+                    }
+                """)
+                tagLayout.addWidget(tag)
+            tagLayout.addStretch()
+            
+            # 删除按钮（默认隐藏）
+            self.deleteBtn = QPushButton("🗑")
+            self.deleteBtn.setFixedSize(28, 28)
+            self.deleteBtn.setCursor(Qt.PointingHandCursor)
+            self.deleteBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #FEE2E2;
+                    border-radius: 14px;
+                    font-size: 14px;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #FECACA;
+                }
+            """)
+            self.deleteBtn.setVisible(False)
+            self.deleteBtn.clicked.connect(lambda: self.delete_clicked.emit(self.index))
+            tagLayout.addWidget(self.deleteBtn)
+            
+            # 预览按钮（默认隐藏）
+            self.previewBtn = QPushButton("👁")
+            self.previewBtn.setFixedSize(28, 28)
+            self.previewBtn.setCursor(Qt.PointingHandCursor)
+            self.previewBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #F3F4F6;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 14px;
+                    font-size: 14px;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #E5E7EB;
+                }
+            """)
+            self.previewBtn.setVisible(False)
+            self.previewBtn.clicked.connect(lambda: self.preview_clicked.emit(self.index))
+            tagLayout.addWidget(self.previewBtn)
+            
+            layout.addLayout(tagLayout)
+            
+            self.updateStyle()
+        
+        def setSelected(self, selected):
+            self.is_selected = selected
+            self.checkIcon.setVisible(selected)
+            self.updateStyle()
+        
+        def updateStyle(self):
+            if self.is_selected:
+                self.setStyleSheet("""
+                    TemplateCard {
+                        background-color: #F0FBF4;
+                        border: 2px solid #16A34A;
+                        border-radius: 12px;
+                    }
+                """)
+            else:
+                self.setStyleSheet("""
+                    TemplateCard {
+                        background-color: white;
+                        border: 1px solid #ECECEC;
+                        border-radius: 12px;
+                    }
+                    TemplateCard:hover {
+                        border: 1px solid #D1D5DB;
+                    }
+                """)
+        
+        def enterEvent(self, event):
+            self.is_hovered = True
+            self.previewBtn.setVisible(True)
+            self.deleteBtn.setVisible(True)
+            super().enterEvent(event)
+        
+        def leaveEvent(self, event):
+            self.is_hovered = False
+            self.previewBtn.setVisible(False)
+            self.deleteBtn.setVisible(False)
+            super().leaveEvent(event)
+        
+        def mousePressEvent(self, event):
+            if not self.previewBtn.underMouse() and not self.deleteBtn.underMouse():
+                self.clicked.emit(self.index)
+            super().mousePressEvent(event)
+    
+    class TemplatePreviewDialog(QDialog):
+        """模板提示词查看弹窗（4.1）"""
+        prompt_updated = pyqtSignal(int, str)  # 信号：模板索引，新提示词
+        
+        def __init__(self, template_index, template_name, template_desc, prompt_text, parent=None):
+            super().__init__(parent)
+            self.template_index = template_index
+            self.template_name = template_name
+            self.is_editing = False
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+            self.setAttribute(Qt.WA_TranslucentBackground)
+            self.setModal(True)
+            
+            # 主布局
+            mainLayout = QHBoxLayout(self)
+            mainLayout.setContentsMargins(0, 0, 0, 0)
+            
+            # 半透明遮罩
+            overlay = QWidget()
+            overlay.setStyleSheet("background-color: rgba(0, 0, 0, 100);")
+            overlayLayout = QVBoxLayout(overlay)
+            overlayLayout.setAlignment(Qt.AlignCenter)
+            
+            # 弹窗卡片
+            card = QFrame()
+            card.setFixedSize(750, 600)
+            card.setStyleSheet("""
+                QFrame {
+                    background-color: white;
+                    border-radius: 16px;
+                    border: 1px solid #ECECEC;
+                }
+            """)
+            cardLayout = QVBoxLayout(card)
+            cardLayout.setContentsMargins(24, 24, 24, 24)
+            cardLayout.setSpacing(16)
+            
+            # 头部
+            headerLayout = QHBoxLayout()
+            titleLabel = QLabel(template_name)
+            titleLabel.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            headerLayout.addWidget(titleLabel)
+            headerLayout.addStretch()
+            
+            # 修改按钮
+            self.editBtn = QPushButton("✏️ 修改")
+            self.editBtn.setCursor(Qt.PointingHandCursor)
+            self.editBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 8px 16px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #F9FAFB;
+                }
+            """)
+            self.editBtn.clicked.connect(self.toggleEdit)
+            headerLayout.addWidget(self.editBtn)
+            
+            closeBtn = QPushButton("✕")
+            closeBtn.setFixedSize(32, 32)
+            closeBtn.setCursor(Qt.PointingHandCursor)
+            closeBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #F3F4F6;
+                    border: none;
+                    border-radius: 16px;
+                    font-size: 16px;
+                    color: #666666;
+                }
+                QPushButton:hover {
+                    background-color: #E5E7EB;
+                }
+            """)
+            closeBtn.clicked.connect(self.close)
+            headerLayout.addWidget(closeBtn)
+            cardLayout.addLayout(headerLayout)
+            
+            # 描述
+            descLayout = QHBoxLayout()
+            descLabel = QLabel(template_desc)
+            descLabel.setStyleSheet("font-size: 13px; color: #666666; border: none; background: transparent;")
+            descLabel.setWordWrap(True)
+            descLayout.addWidget(descLabel)
+            
+            tag = QLabel("云端")
+            tag.setStyleSheet("""
+                QLabel {
+                    background-color: #E3F7EA;
+                    color: #16A34A;
+                    padding: 2px 8px;
+                    border-radius: 10px;
+                    font-size: 10px;
+                    font-weight: bold;
+                    border: none;
+                }
+            """)
+            descLayout.addWidget(tag)
+            descLayout.addStretch()
+            cardLayout.addLayout(descLayout)
+            
+            # 分隔线
+            separator = QFrame()
+            separator.setFrameShape(QFrame.HLine)
+            separator.setStyleSheet("background-color: #F3F4F6; border: none; height: 1px;")
+            cardLayout.addWidget(separator)
+            
+            # 提示词内容（可编辑的 QTextEdit）
+            self.promptEdit = QTextEdit()
+            self.promptEdit.setPlainText(prompt_text)
+            self.promptEdit.setReadOnly(True)
+            self.promptEdit.setStyleSheet("""
+                QTextEdit {
+                    background-color: #F9FAFB;
+                    padding: 16px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    color: #374151;
+                    font-family: Consolas, monospace;
+                    border: 1px solid #E5E7EB;
+                }
+                QTextEdit:focus {
+                    border: 1px solid #16A34A;
+                }
+            """)
+            cardLayout.addWidget(self.promptEdit)
+            
+            # 底部保存按钮（默认隐藏）
+            self.saveBtnLayout = QHBoxLayout()
+            self.saveBtnLayout.addStretch()
+            
+            cancelSaveBtn = QPushButton("取消")
+            cancelSaveBtn.setCursor(Qt.PointingHandCursor)
+            cancelSaveBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 10px 20px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #F9FAFB;
+                }
+            """)
+            cancelSaveBtn.clicked.connect(self.cancelEdit)
+            self.saveBtnLayout.addWidget(cancelSaveBtn)
+            
+            saveBtn = QPushButton("保存修改")
+            saveBtn.setCursor(Qt.PointingHandCursor)
+            saveBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #16A34A;
+                    color: white;
+                    padding: 10px 20px;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #15803D;
+                }
+            """)
+            saveBtn.clicked.connect(self.saveEdit)
+            self.saveBtnLayout.addWidget(saveBtn)
+            
+            self.saveBtnWidget = QWidget()
+            self.saveBtnWidget.setLayout(self.saveBtnLayout)
+            self.saveBtnWidget.setVisible(False)
+            cardLayout.addWidget(self.saveBtnWidget)
+            
+            overlayLayout.addWidget(card)
+            mainLayout.addWidget(overlay)
+        
+        def toggleEdit(self):
+            """切换编辑模式"""
+            self.is_editing = not self.is_editing
+            if self.is_editing:
+                self.promptEdit.setReadOnly(False)
+                self.promptEdit.setStyleSheet("""
+                    QTextEdit {
+                        background-color: white;
+                        padding: 16px;
+                        border-radius: 8px;
+                        font-size: 13px;
+                        color: #374151;
+                        font-family: Consolas, monospace;
+                        border: 2px solid #16A34A;
+                    }
+                """)
+                self.editBtn.setText("👁 预览")
+                self.saveBtnWidget.setVisible(True)
+            else:
+                self.promptEdit.setReadOnly(True)
+                self.promptEdit.setStyleSheet("""
+                    QTextEdit {
+                        background-color: #F9FAFB;
+                        padding: 16px;
+                        border-radius: 8px;
+                        font-size: 13px;
+                        color: #374151;
+                        font-family: Consolas, monospace;
+                        border: 1px solid #E5E7EB;
+                    }
+                """)
+                self.editBtn.setText("✏️ 修改")
+                self.saveBtnWidget.setVisible(False)
+        
+        def cancelEdit(self):
+            """取消编辑"""
+            self.is_editing = False
+            self.promptEdit.setReadOnly(True)
+            self.promptEdit.setStyleSheet("""
+                QTextEdit {
+                    background-color: #F9FAFB;
+                    padding: 16px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    color: #374151;
+                    font-family: Consolas, monospace;
+                    border: 1px solid #E5E7EB;
+                }
+            """)
+            self.editBtn.setText("✏️ 修改")
+            self.saveBtnWidget.setVisible(False)
+        
+        def saveEdit(self):
+            """保存修改"""
+            new_content = self.promptEdit.toPlainText()
+            self.prompt_updated.emit(self.template_index, new_content)
+            
+            # 切换回预览模式
+            self.is_editing = False
+            self.promptEdit.setReadOnly(True)
+            self.promptEdit.setStyleSheet("""
+                QTextEdit {
+                    background-color: #F9FAFB;
+                    padding: 16px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    color: #374151;
+                    font-family: Consolas, monospace;
+                    border: 1px solid #E5E7EB;
+                }
+            """)
+            self.editBtn.setText("✏️ 修改")
+            self.saveBtnWidget.setVisible(False)
+            
+            InfoBar.success(
+                title="保存成功",
+                content="模板提示词已更新",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+        
+        def mousePressEvent(self, event):
+            # 点击遮罩关闭
+            if event.pos().x() < 50 or event.pos().x() > self.width() - 50 or \
+               event.pos().y() < 50 or event.pos().y() > self.height() - 50:
+                self.close()
+            super().mousePressEvent(event)
+    
+    class CreateTemplateDialog(QDialog):
+        """创建模板弹窗（4.2）"""
+        template_created = pyqtSignal(dict)  # 模板创建信号
+        
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+            self.setAttribute(Qt.WA_TranslucentBackground)
+            self.setModal(True)
+            
+            # 主布局
+            mainLayout = QHBoxLayout(self)
+            mainLayout.setContentsMargins(0, 0, 0, 0)
+            
+            # 半透明遮罩
+            overlay = QWidget()
+            overlay.setStyleSheet("background-color: rgba(0, 0, 0, 100);")
+            overlayLayout = QVBoxLayout(overlay)
+            overlayLayout.setAlignment(Qt.AlignCenter)
+            
+            # 弹窗卡片
+            card = QFrame()
+            card.setFixedSize(750, 720)
+            card.setStyleSheet("""
+                QFrame {
+                    background-color: white;
+                    border-radius: 16px;
+                    border: 1px solid #ECECEC;
+                }
+            """)
+            cardLayout = QVBoxLayout(card)
+            cardLayout.setContentsMargins(24, 24, 24, 24)
+            cardLayout.setSpacing(16)
+            
+            # 头部
+            headerLayout = QHBoxLayout()
+            titleLabel = QLabel("创建模板")
+            titleLabel.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            headerLayout.addWidget(titleLabel)
+            headerLayout.addStretch()
+            
+            closeBtn = QPushButton("✕")
+            closeBtn.setFixedSize(32, 32)
+            closeBtn.setCursor(Qt.PointingHandCursor)
+            closeBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #F3F4F6;
+                    border: none;
+                    border-radius: 16px;
+                    font-size: 16px;
+                    color: #666666;
+                }
+                QPushButton:hover {
+                    background-color: #E5E7EB;
+                }
+            """)
+            closeBtn.clicked.connect(self.close)
+            headerLayout.addWidget(closeBtn)
+            cardLayout.addLayout(headerLayout)
+            
+            # 副标题
+            subtitleLabel = QLabel("支持 Markdown 格式，AI 将参考此结构生成报告内容")
+            subtitleLabel.setStyleSheet("font-size: 13px; color: #666666; border: none; background: transparent;")
+            cardLayout.addWidget(subtitleLabel)
+            
+            # 模板名称
+            nameLabel = QLabel("模板名称")
+            nameLabel.setStyleSheet("font-size: 14px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            cardLayout.addWidget(nameLabel)
+            
+            self.nameInput = QLineEdit()
+            self.nameInput.setPlaceholderText("输入模板名称")
+            self.nameInput.setStyleSheet("""
+                QLineEdit {
+                    padding: 10px 12px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    color: #1a1a1a;
+                    background-color: white;
+                }
+                QLineEdit:focus {
+                    border: 1px solid #16A34A;
+                }
+            """)
+            cardLayout.addWidget(self.nameInput)
+            
+            # 模板简介
+            introLabel = QLabel("模板简介")
+            introLabel.setStyleSheet("font-size: 14px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            cardLayout.addWidget(introLabel)
+            
+            self.introInput = QLineEdit()
+            self.introInput.setPlaceholderText("简短描述模板用途，如：适合向领导汇报的简洁日报")
+            self.introInput.setStyleSheet("""
+                QLineEdit {
+                    padding: 10px 12px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    color: #1a1a1a;
+                    background-color: white;
+                }
+                QLineEdit:focus {
+                    border: 1px solid #16A34A;
+                }
+            """)
+            cardLayout.addWidget(self.introInput)
+            
+            # 模板正文
+            bodyLabel = QLabel("模板正文")
+            bodyLabel.setStyleSheet("font-size: 14px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            cardLayout.addWidget(bodyLabel)
+            
+            self.bodyInput = QTextEdit()
+            self.bodyInput.setPlaceholderText("## 周报 [日期]\n\n### 本周完成\n- [工作项]\n\n### 下周计划\n- [计划项]")
+            self.bodyInput.setMinimumHeight(150)
+            self.bodyInput.setStyleSheet("""
+                QTextEdit {
+                    padding: 10px 12px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    color: #1a1a1a;
+                    background-color: white;
+                    font-family: Consolas, monospace;
+                }
+                QTextEdit:focus {
+                    border: 1px solid #16A34A;
+                }
+            """)
+            cardLayout.addWidget(self.bodyInput)
+            
+            bodyHint = QLabel("支持 Markdown 格式，AI 将参考此结构生成报告内容")
+            bodyHint.setStyleSheet("font-size: 11px; color: #9CA3AF; border: none; background: transparent;")
+            cardLayout.addWidget(bodyHint)
+            
+            # 自定义指令
+            instrLabel = QLabel("自定义指令")
+            instrLabel.setStyleSheet("font-size: 14px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            cardLayout.addWidget(instrLabel)
+            
+            self.instrInput = QTextEdit()
+            self.instrInput.setPlaceholderText("例如：用表格输出耗时，结尾补充风险和明日计划，语气保持简洁")
+            self.instrInput.setMinimumHeight(80)
+            self.instrInput.setStyleSheet("""
+                QTextEdit {
+                    padding: 10px 12px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    color: #1a1a1a;
+                    background-color: white;
+                }
+                QTextEdit:focus {
+                    border: 1px solid #16A34A;
+                }
+            """)
+            cardLayout.addWidget(self.instrInput)
+            
+            instrHint = QLabel("写模板固定的输出要求，会随该模板一起保存；生成时还可以叠加本次自定义指令")
+            instrHint.setStyleSheet("font-size: 11px; color: #9CA3AF; border: none; background: transparent;")
+            cardLayout.addWidget(instrHint)
+            
+            cardLayout.addStretch()
+            
+            # 底部按钮
+            btnLayout = QHBoxLayout()
+            btnLayout.addStretch()
+            
+            cancelBtn = QPushButton("取消")
+            cancelBtn.setCursor(Qt.PointingHandCursor)
+            cancelBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 10px 20px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #F9FAFB;
+                }
+            """)
+            cancelBtn.clicked.connect(self.close)
+            btnLayout.addWidget(cancelBtn)
+            
+            saveBtn = QPushButton("保存模板")
+            saveBtn.setCursor(Qt.PointingHandCursor)
+            saveBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #16A34A;
+                    color: white;
+                    padding: 10px 20px;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #15803D;
+                }
+            """)
+            saveBtn.clicked.connect(self.saveTemplate)
+            btnLayout.addWidget(saveBtn)
+            
+            cardLayout.addLayout(btnLayout)
+            
+            overlayLayout.addWidget(card)
+            mainLayout.addWidget(overlay)
+        
+        def saveTemplate(self):
+            name = self.nameInput.text().strip()
+            intro = self.introInput.text().strip()
+            body = self.bodyInput.toPlainText().strip()
+            if not name:
+                return
+            template = {
+                "name": name,
+                "intro": intro if intro else body[:30] + "..." if len(body) > 30 else body,
+                "desc": body[:50] + "..." if len(body) > 50 else body,
+                "is_cloud": False,
+                "prompt": body
+            }
+            self.template_created.emit(template)
+            self.close()
+    
+    class GenerateConfirmDialog(QDialog):
+        """生成报告确认弹窗（4.3）"""
+        stay_here = pyqtSignal()  # 留在此页信号
+        go_history = pyqtSignal()  # 查看历史报告信号
+        
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+            self.setAttribute(Qt.WA_TranslucentBackground)
+            self.setModal(True)
+            
+            # 主布局
+            mainLayout = QHBoxLayout(self)
+            mainLayout.setContentsMargins(0, 0, 0, 0)
+            
+            # 半透明遮罩
+            overlay = QWidget()
+            overlay.setStyleSheet("background-color: rgba(0, 0, 0, 100);")
+            overlayLayout = QVBoxLayout(overlay)
+            overlayLayout.setAlignment(Qt.AlignCenter)
+            
+            # 弹窗卡片
+            card = QFrame()
+            card.setFixedSize(450, 220)
+            card.setStyleSheet("""
+                QFrame {
+                    background-color: white;
+                    border-radius: 16px;
+                    border: 1px solid #ECECEC;
+                }
+            """)
+            cardLayout = QVBoxLayout(card)
+            cardLayout.setContentsMargins(24, 24, 24, 24)
+            cardLayout.setSpacing(16)
+            
+            # 标题
+            titleLabel = QLabel("报告正在生成中")
+            titleLabel.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            cardLayout.addWidget(titleLabel)
+            
+            # 描述
+            descLabel = QLabel("已提交报告生成任务，AI 正在为你撰写报告。\n是否跳转到历史报告页面查看进度？")
+            descLabel.setStyleSheet("font-size: 13px; color: #666666; border: none; background: transparent;")
+            descLabel.setWordWrap(True)
+            cardLayout.addWidget(descLabel)
+            
+            cardLayout.addStretch()
+            
+            # 底部按钮
+            btnLayout = QHBoxLayout()
+            btnLayout.addStretch()
+            
+            stayBtn = QPushButton("留在此页")
+            stayBtn.setCursor(Qt.PointingHandCursor)
+            stayBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 10px 20px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #F9FAFB;
+                }
+            """)
+            stayBtn.clicked.connect(self.onStay)
+            btnLayout.addWidget(stayBtn)
+            
+            goBtn = QPushButton("查看历史报告")
+            goBtn.setCursor(Qt.PointingHandCursor)
+            goBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #16A34A;
+                    color: white;
+                    padding: 10px 20px;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #15803D;
+                }
+            """)
+            goBtn.clicked.connect(self.onGoHistory)
+            btnLayout.addWidget(goBtn)
+            
+            cardLayout.addLayout(btnLayout)
+            
+            overlayLayout.addWidget(card)
+            mainLayout.addWidget(overlay)
+        
+        def onStay(self):
+            self.stay_here.emit()
+            self.close()
+        
+        def onGoHistory(self):
+            self.go_history.emit()
+            self.close()
+    
+    class ReportResultDialog(QDialog):
+        """报告生成结果弹窗（4.4）- 支持流式输出"""
+        def __init__(self, report_type, date_range, template_name, template_prompt, parent=None):
+            super().__init__(parent)
+            self.report_type = report_type
+            self.date_range = date_range
+            self.template_name = template_name
+            self.template_prompt = template_prompt
+            self.is_generating = True
+            self.full_content = ""
+            
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+            self.setAttribute(Qt.WA_TranslucentBackground)
+            self.setModal(True)
+            
+            # 主布局
+            mainLayout = QHBoxLayout(self)
+            mainLayout.setContentsMargins(0, 0, 0, 0)
+            
+            # 半透明遮罩
+            overlay = QWidget()
+            overlay.setStyleSheet("background-color: rgba(0, 0, 0, 100);")
+            overlayLayout = QVBoxLayout(overlay)
+            overlayLayout.setAlignment(Qt.AlignCenter)
+            
+            # 弹窗卡片（接近全屏）
+            card = QFrame()
+            card.setMinimumSize(900, 700)
+            card.setStyleSheet("""
+                QFrame {
+                    background-color: white;
+                    border-radius: 16px;
+                    border: 1px solid #ECECEC;
+                }
+            """)
+            cardLayout = QVBoxLayout(card)
+            cardLayout.setContentsMargins(24, 24, 24, 24)
+            cardLayout.setSpacing(16)
+            
+            # 头部
+            headerLayout = QHBoxLayout()
+            
+            self.titleLabel = QLabel(f"{report_type}报告正在生成中...")
+            self.titleLabel.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            headerLayout.addWidget(self.titleLabel)
+            
+            self.statusTag = QLabel("生成中")
+            self.statusTag.setStyleSheet("""
+                QLabel {
+                    color: #F59E0B;
+                    font-size: 13px;
+                    font-weight: bold;
+                    border: none;
+                    background: transparent;
+                }
+            """)
+            headerLayout.addWidget(self.statusTag)
+            headerLayout.addStretch()
+            
+            closeBtn = QPushButton("✕")
+            closeBtn.setFixedSize(32, 32)
+            closeBtn.setCursor(Qt.PointingHandCursor)
+            closeBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #F3F4F6;
+                    border: none;
+                    border-radius: 16px;
+                    font-size: 16px;
+                    color: #666666;
+                }
+                QPushButton:hover {
+                    background-color: #E5E7EB;
+                }
+            """)
+            closeBtn.clicked.connect(self.close)
+            headerLayout.addWidget(closeBtn)
+            cardLayout.addLayout(headerLayout)
+            
+            # 副标题
+            self.subtitleLabel = QLabel(f"工作{report_type} — {date_range}")
+            self.subtitleLabel.setStyleSheet("font-size: 13px; color: #666666; border: none; background: transparent;")
+            cardLayout.addWidget(self.subtitleLabel)
+            
+            # 分隔线
+            separator = QFrame()
+            separator.setFrameShape(QFrame.HLine)
+            separator.setStyleSheet("background-color: #F3F4F6; border: none; height: 1px;")
+            cardLayout.addWidget(separator)
+            
+            # 报告内容区域
+            self.contentEdit = QTextEdit()
+            self.contentEdit.setReadOnly(True)
+            self.contentEdit.setStyleSheet("""
+                QTextEdit {
+                    font-size: 14px;
+                    color: #374151;
+                    border: none;
+                    background: transparent;
+                    padding: 16px;
+                    font-family: "Microsoft YaHei", sans-serif;
+                }
+            """)
+            cardLayout.addWidget(self.contentEdit)
+            
+            # 分隔线
+            separator2 = QFrame()
+            separator2.setFrameShape(QFrame.HLine)
+            separator2.setStyleSheet("background-color: #F3F4F6; border: none; height: 1px;")
+            cardLayout.addWidget(separator2)
+            
+            # 底部栏
+            footerLayout = QHBoxLayout()
+            
+            self.infoLabel = QLabel(f"模板：{template_name} · 0 字")
+            self.infoLabel.setStyleSheet("font-size: 12px; color: #9CA3AF; border: none; background: transparent;")
+            footerLayout.addWidget(self.infoLabel)
+            footerLayout.addStretch()
+            
+            # 操作按钮
+            self.actionBtns = {}
+            for icon, text, name in [("📋", "复制", "copy"), ("📥", "导出", "export"), ("🔄", "重新生成", "regenerate")]:
+                btn = QPushButton(f"{icon} {text}")
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.setEnabled(False)  # 生成完成前禁用
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: white;
+                        color: #374151;
+                        padding: 8px 16px;
+                        border: 1px solid #E5E7EB;
+                        border-radius: 8px;
+                        font-size: 12px;
+                        border: none;
+                    }
+                    QPushButton:hover {
+                        background-color: #F9FAFB;
+                    }
+                    QPushButton:disabled {
+                        color: #9CA3AF;
+                        background-color: #F3F4F6;
+                    }
+                """)
+                if name == "copy":
+                    btn.clicked.connect(self.copyContent)
+                elif name == "export":
+                    btn.clicked.connect(self.exportContent)
+                elif name == "regenerate":
+                    btn.clicked.connect(self.regenerate)
+                self.actionBtns[name] = btn
+                footerLayout.addWidget(btn)
+            
+            cardLayout.addLayout(footerLayout)
+            
+            overlayLayout.addWidget(card)
+            mainLayout.addWidget(overlay)
+            
+            # 启动生成
+            self.startGeneration()
+        
+        def startGeneration(self):
+            """启动报告生成"""
+            # 解析日期范围
+            dates = self.date_range.split(" 至 ")
+            start_date = dates[0]
+            end_date = dates[1] if len(dates) > 1 else start_date
+            
+            # 创建工作线程
+            self.worker = ReportGenerateWorker(
+                self.template_prompt,
+                start_date,
+                end_date,
+                self.report_type
+            )
+            
+            # 连接信号
+            self.worker.chunk_received.connect(self.onChunkReceived)
+            self.worker.generation_finished.connect(self.onGenerationFinished)
+            self.worker.generation_error.connect(self.onGenerationError)
+            
+            # 启动线程
+            self.worker.start()
+        
+        def onChunkReceived(self, chunk):
+            """接收到一块内容"""
+            self.full_content += chunk
+            self.contentEdit.setPlainText(self.full_content)
+            # 滚动到底部
+            self.contentEdit.verticalScrollBar().setValue(
+                self.contentEdit.verticalScrollBar().maximum()
+            )
+            # 更新字数
+            self.infoLabel.setText(f"模板：{self.template_name} · {len(self.full_content)} 字")
+        
+        def onGenerationFinished(self, content):
+            """生成完成"""
+            self.is_generating = False
+            self.full_content = content
+            self.contentEdit.setPlainText(content)
+            
+            # 更新UI
+            self.titleLabel.setText(f"{self.report_type}报告生成完成")
+            self.statusTag.setText("已完成")
+            self.statusTag.setStyleSheet("""
+                QLabel {
+                    color: #16A34A;
+                    font-size: 13px;
+                    font-weight: bold;
+                    border: none;
+                    background: transparent;
+                }
+            """)
+            
+            # 启用操作按钮
+            for btn in self.actionBtns.values():
+                btn.setEnabled(True)
+            
+            # 更新字数
+            self.infoLabel.setText(f"模板：{self.template_name} · {len(content)} 字")
+        
+        def onGenerationError(self, error):
+            """生成出错"""
+            self.is_generating = False
+            self.contentEdit.setPlainText(f"生成失败: {error}")
+            
+            self.titleLabel.setText(f"{self.report_type}报告生成失败")
+            self.statusTag.setText("失败")
+            self.statusTag.setStyleSheet("""
+                QLabel {
+                    color: #EF4444;
+                    font-size: 13px;
+                    font-weight: bold;
+                    border: none;
+                    background: transparent;
+                }
+            """)
+        
+        def copyContent(self):
+            """复制内容"""
+            QApplication.clipboard().setText(self.full_content)
+            InfoBar.success(
+                title="复制成功",
+                content="报告内容已复制到剪贴板",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+        
+        def exportContent(self):
+            """导出内容"""
+            from PyQt5.QtWidgets import QFileDialog
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "导出报告", f"{self.report_type}报告_{self.date_range.replace('至', '-').strip()}.md",
+                "Markdown Files (*.md);;Text Files (*.txt);;All Files (*)"
+            )
+            if file_path:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(self.full_content)
+                InfoBar.success(
+                    title="导出成功",
+                    content=f"报告已保存到: {file_path}",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+        
+        def regenerate(self):
+            """重新生成"""
+            self.full_content = ""
+            self.contentEdit.clear()
+            self.is_generating = True
+            self.titleLabel.setText(f"{self.report_type}报告正在生成中...")
+            self.statusTag.setText("生成中")
+            self.statusTag.setStyleSheet("""
+                QLabel {
+                    color: #F59E0B;
+                    font-size: 13px;
+                    font-weight: bold;
+                    border: none;
+                    background: transparent;
+                }
+            """)
+            for btn in self.actionBtns.values():
+                btn.setEnabled(False)
+            self.startGeneration()
+    
+    class ReportPage(QWidget):
+        """生成报告页面"""
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.setObjectName("reportPage")
+            self.selected_template_index = 2  # 默认选中AI工作轨迹日报
+            self.template_cards = []
+            
+            # 主布局
+            mainLayout = QVBoxLayout(self)
+            mainLayout.setContentsMargins(0, 0, 0, 0)
+            mainLayout.setSpacing(0)
+            
+            # 滚动区域
+            scrollArea = QScrollArea()
+            scrollArea.setWidgetResizable(True)
+            scrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            scrollArea.setStyleSheet("QScrollArea { border: none; background-color: #F7F8F7; }")
+            
+            contentWidget = QWidget()
+            contentWidget.setStyleSheet("background-color: #F7F8F7; border: none;")
+            layout = QVBoxLayout(contentWidget)
+            layout.setContentsMargins(32, 24, 32, 24)
+            layout.setSpacing(24)
+            
+            # ========== 顶部标题栏 ==========
+            headerCard = QFrame()
+            headerCard.setStyleSheet("""
+                QFrame {
+                    background-color: white;
+                    border-radius: 16px;
+                    border: 1px solid #ECECEC;
+                }
+            """)
+            headerLayout = QHBoxLayout(headerCard)
+            headerLayout.setContentsMargins(24, 20, 24, 20)
+            headerLayout.setSpacing(16)
+            
+            # 左侧标题
+            titleLeftLayout = QVBoxLayout()
+            titleTopLayout = QHBoxLayout()
+            
+            iconLabel = QLabel("✨")
+            iconLabel.setFixedSize(32, 32)
+            iconLabel.setAlignment(Qt.AlignCenter)
+            iconLabel.setStyleSheet("""
+                QLabel {
+                    background-color: #F0FBF4;
+                    border-radius: 8px;
+                    font-size: 18px;
+                    border: none;
+                }
+            """)
+            titleTopLayout.addWidget(iconLabel)
+            
+            titleLabel = QLabel("报告配置")
+            titleLabel.setStyleSheet("font-size: 22px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            titleTopLayout.addWidget(titleLabel)
+            titleTopLayout.addStretch()
+            titleLeftLayout.addLayout(titleTopLayout)
+            
+            subtitleLabel = QLabel("配置参数后点击生成，AI 将基于工作记录自动撰写报告")
+            subtitleLabel.setStyleSheet("font-size: 13px; color: #666666; border: none; background: transparent;")
+            titleLeftLayout.addWidget(subtitleLabel)
+            
+            headerLayout.addLayout(titleLeftLayout, 1)
+            
+            # 右侧按钮
+            btnLayout = QHBoxLayout()
+            btnLayout.setSpacing(12)
+            
+            # 自定义指令按钮（带角标）
+            instrBtnContainer = QWidget()
+            instrBtnContainer.setStyleSheet("border: none; background: transparent;")
+            instrBtnLayout = QVBoxLayout(instrBtnContainer)
+            instrBtnLayout.setContentsMargins(0, 0, 0, 0)
+            
+            instrBtn = QPushButton("💬 自定义指令")
+            instrBtn.setCursor(Qt.PointingHandCursor)
+            instrBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 10px 20px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #F9FAFB;
+                }
+            """)
+            instrBtnLayout.addWidget(instrBtn)
+            
+            # 建议填写角标
+            badge = QLabel("建议填写")
+            badge.setFixedSize(60, 20)
+            badge.setAlignment(Qt.AlignCenter)
+            badge.setStyleSheet("""
+                QLabel {
+                    background-color: #16A34A;
+                    color: white;
+                    padding: 2px 6px;
+                    border-radius: 10px;
+                    font-size: 10px;
+                    font-weight: bold;
+                    border: none;
+                }
+            """)
+            badge.setParent(instrBtn)
+            badge.move(instrBtn.width() - 50, -8)
+            
+            btnLayout.addWidget(instrBtnContainer)
+            
+            # 开始生成按钮
+            generateBtn = QPushButton("✨ 开始生成报告")
+            generateBtn.setCursor(Qt.PointingHandCursor)
+            generateBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #16A34A;
+                    color: white;
+                    padding: 10px 24px;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #15803D;
+                }
+            """)
+            generateBtn.clicked.connect(self.onGenerate)
+            btnLayout.addWidget(generateBtn)
+            
+            headerLayout.addLayout(btnLayout)
+            layout.addWidget(headerCard)
+            
+            # ========== 主体两栏布局 ==========
+            bodyLayout = QHBoxLayout()
+            bodyLayout.setSpacing(24)
+            
+            # 左栏
+            leftLayout = QVBoxLayout()
+            leftLayout.setSpacing(24)
+            
+            # 左栏第一张卡片：报告类型 + 时间范围
+            typeCard = QFrame()
+            typeCard.setStyleSheet("""
+                QFrame {
+                    background-color: white;
+                    border-radius: 16px;
+                    border: 1px solid #ECECEC;
+                }
+            """)
+            typeCardLayout = QHBoxLayout(typeCard)
+            typeCardLayout.setContentsMargins(24, 20, 24, 20)
+            typeCardLayout.setSpacing(32)
+            
+            # 左块：报告类型
+            reportTypeLayout = QVBoxLayout()
+            reportTypeLayout.setSpacing(12)
+            
+            reportTypeTitle = QLabel("报告类型")
+            reportTypeTitle.setStyleSheet("font-size: 15px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            reportTypeLayout.addWidget(reportTypeTitle)
+            
+            reportTypeDesc = QLabel("选择要生成的报告周期")
+            reportTypeDesc.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
+            reportTypeLayout.addWidget(reportTypeDesc)
+            
+            # 分段选择按钮
+            self.typeButtons = []
+            typeBtnLayout = QHBoxLayout()
+            typeBtnLayout.setSpacing(8)
+            
+            for i, (text, days) in enumerate([("日报", 0), ("周报", 7), ("月报", 30)]):
+                btn = QPushButton(text)
+                btn.setCheckable(True)
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.setMinimumHeight(36)
+                btn.setProperty("days", days)
+                btn.clicked.connect(lambda checked, idx=i: self.selectReportType(idx))
+                
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: white;
+                        color: #374151;
+                        padding: 8px 20px;
+                        border: 1px solid #E5E7EB;
+                        border-radius: 8px;
+                        font-size: 13px;
+                        font-weight: bold;
+                    }
+                    QPushButton:checked {
+                        background-color: #F0FBF4;
+                        color: #16A34A;
+                        border: 1px solid #16A34A;
+                    }
+                    QPushButton:hover {
+                        background-color: #F9FAFB;
+                    }
+                """)
+                self.typeButtons.append(btn)
+                typeBtnLayout.addWidget(btn)
+            
+            self.typeButtons[0].setChecked(True)
+            reportTypeLayout.addLayout(typeBtnLayout)
+            reportTypeLayout.addStretch()
+            
+            typeCardLayout.addLayout(reportTypeLayout, 1)
+            
+            # 分隔线
+            typeSep = QFrame()
+            typeSep.setFrameShape(QFrame.VLine)
+            typeSep.setStyleSheet("background-color: #F3F4F6; border: none; width: 1px;")
+            typeCardLayout.addWidget(typeSep)
+            
+            # 右块：时间范围
+            timeRangeLayout = QVBoxLayout()
+            timeRangeLayout.setSpacing(12)
+            
+            timeRangeTitle = QLabel("时间范围")
+            timeRangeTitle.setStyleSheet("font-size: 15px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            timeRangeLayout.addWidget(timeRangeTitle)
+            
+            timeRangeDesc = QLabel("默认根据报告类型确定，可手动修改")
+            timeRangeDesc.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
+            timeRangeLayout.addWidget(timeRangeDesc)
+            
+            # 日期选择器（使用 Fluent CalendarPicker）
+            dateLayout = QHBoxLayout()
+            dateLayout.setSpacing(12)
+            
+            self.startDateEdit = CalendarPicker()
+            self.startDateEdit.setDate(QDate.currentDate())
+            self.startDateEdit.setDateFormat("yyyy/MM/dd")
+            self.startDateEdit.setFixedWidth(140)
+            dateLayout.addWidget(self.startDateEdit)
+            
+            toLabel = QLabel("至")
+            toLabel.setStyleSheet("font-size: 13px; color: #666666; border: none; background: transparent;")
+            dateLayout.addWidget(toLabel)
+            
+            self.endDateEdit = CalendarPicker()
+            self.endDateEdit.setDate(QDate.currentDate())
+            self.endDateEdit.setDateFormat("yyyy/MM/dd")
+            self.endDateEdit.setFixedWidth(140)
+            dateLayout.addWidget(self.endDateEdit)
+            
+            timeRangeLayout.addLayout(dateLayout)
+            timeRangeLayout.addStretch()
+            
+            typeCardLayout.addLayout(timeRangeLayout, 1)
+            
+            leftLayout.addWidget(typeCard)
+            
+            # 左栏第二张卡片：选择报告模板
+            templateCard = QFrame()
+            templateCard.setStyleSheet("""
+                QFrame {
+                    background-color: white;
+                    border-radius: 16px;
+                    border: 1px solid #ECECEC;
+                }
+            """)
+            templateCardLayout = QVBoxLayout(templateCard)
+            templateCardLayout.setContentsMargins(24, 20, 24, 20)
+            templateCardLayout.setSpacing(16)
+            
+            # 卡片头部
+            templateHeaderLayout = QHBoxLayout()
+            
+            templateIcon = QLabel("📄")
+            templateIcon.setFixedSize(28, 28)
+            templateIcon.setAlignment(Qt.AlignCenter)
+            templateIcon.setStyleSheet("""
+                QLabel {
+                    background-color: #F0FBF4;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    border: none;
+                }
+            """)
+            templateHeaderLayout.addWidget(templateIcon)
+            
+            templateTitle = QLabel("选择报告模板")
+            templateTitle.setStyleSheet("font-size: 15px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            templateHeaderLayout.addWidget(templateTitle)
+            templateHeaderLayout.addStretch()
+            
+            # 导入模板按钮
+            importBtn = QPushButton("📥 导入模板")
+            importBtn.setCursor(Qt.PointingHandCursor)
+            importBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 8px 16px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #F9FAFB;
+                }
+            """)
+            importBtn.clicked.connect(self.onImportTemplate)
+            templateHeaderLayout.addWidget(importBtn)
+            
+            # 导出模板按钮
+            exportBtn = QPushButton("📤 导出模板")
+            exportBtn.setCursor(Qt.PointingHandCursor)
+            exportBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 8px 16px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #F9FAFB;
+                }
+            """)
+            exportBtn.clicked.connect(self.onExportTemplate)
+            templateHeaderLayout.addWidget(exportBtn)
+            
+            # 创建模板按钮
+            createBtn = QPushButton("＋ 创建模板")
+            createBtn.setCursor(Qt.PointingHandCursor)
+            createBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: white;
+                    color: #374151;
+                    padding: 8px 16px;
+                    border: 1px solid #E5E7EB;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #F9FAFB;
+                }
+            """)
+            createBtn.clicked.connect(self.onCreateTemplate)
+            templateHeaderLayout.addWidget(createBtn)
+            
+            templateCardLayout.addLayout(templateHeaderLayout)
+            
+            # 副标题
+            templateSubtitle = QLabel("选择合适的模板，AI 将为你生成更贴合需求的报告")
+            templateSubtitle.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
+            templateCardLayout.addWidget(templateSubtitle)
+            
+            # 模板网格
+            self.templateGrid = QGridLayout()
+            self.templateGrid.setSpacing(16)
+            
+            for i, template in enumerate(REPORT_TEMPLATES):
+                card = TemplateCard(i, template["name"], template.get("intro", template["desc"]), template.get("is_cloud", True))
+                card.clicked.connect(self.selectTemplate)
+                card.preview_clicked.connect(self.showTemplatePreview)
+                card.delete_clicked.connect(self.deleteTemplate)
+                self.template_cards.append(card)
+                self.templateGrid.addWidget(card, i // 3, i % 3)
+            
+            templateCardLayout.addLayout(self.templateGrid)
+            
+            leftLayout.addWidget(templateCard)
+            
+            bodyLayout.addLayout(leftLayout, 7)
+            
+            # 右栏：模板预览
+            previewCard = QFrame()
+            previewCard.setStyleSheet("""
+                QFrame {
+                    background-color: white;
+                    border-radius: 16px;
+                    border: 1px solid #ECECEC;
+                }
+            """)
+            previewCardLayout = QVBoxLayout(previewCard)
+            previewCardLayout.setContentsMargins(24, 20, 24, 20)
+            previewCardLayout.setSpacing(16)
+            
+            # 预览标题
+            previewTitle = QLabel("模板预览")
+            previewTitle.setStyleSheet("font-size: 15px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            previewCardLayout.addWidget(previewTitle)
+            
+            # 预览头部
+            previewHeaderLayout = QHBoxLayout()
+            
+            previewIcon = QLabel("📄")
+            previewIcon.setFixedSize(32, 32)
+            previewIcon.setAlignment(Qt.AlignCenter)
+            previewIcon.setStyleSheet("""
+                QLabel {
+                    background-color: #F0FBF4;
+                    border-radius: 8px;
+                    font-size: 16px;
+                    border: none;
+                }
+            """)
+            previewHeaderLayout.addWidget(previewIcon)
+            
+            previewInfoLayout = QVBoxLayout()
+            previewNameLayout = QHBoxLayout()
+            self.previewNameLabel = QLabel(REPORT_TEMPLATES[2]["name"])
+            self.previewNameLabel.setStyleSheet("font-size: 15px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            previewNameLayout.addWidget(self.previewNameLabel)
+            
+            previewCloudTag = QLabel("云端")
+            previewCloudTag.setStyleSheet("""
+                QLabel {
+                    background-color: #E3F7EA;
+                    color: #16A34A;
+                    padding: 2px 8px;
+                    border-radius: 10px;
+                    font-size: 10px;
+                    font-weight: bold;
+                    border: none;
+                }
+            """)
+            previewNameLayout.addWidget(previewCloudTag)
+            previewNameLayout.addStretch()
+            previewInfoLayout.addLayout(previewNameLayout)
+            
+            self.previewDateLabel = QLabel(f"时间范围：{QDate.currentDate().toString('yyyy-MM-dd')} 至 {QDate.currentDate().toString('yyyy-MM-dd')}")
+            self.previewDateLabel.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
+            previewInfoLayout.addWidget(self.previewDateLabel)
+            
+            previewHeaderLayout.addLayout(previewInfoLayout)
+            previewCardLayout.addLayout(previewHeaderLayout)
+            
+            # 分隔线
+            previewSep = QFrame()
+            previewSep.setFrameShape(QFrame.HLine)
+            previewSep.setStyleSheet("background-color: #F3F4F6; border: none; height: 1px;")
+            previewCardLayout.addWidget(previewSep)
+            
+            # 预览内容区域
+            self.previewContent = QLabel()
+            self.previewContent.setWordWrap(True)
+            self.previewContent.setStyleSheet("""
+                QLabel {
+                    background-color: #F9FAFB;
+                    padding: 16px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    color: #374151;
+                    font-family: Consolas, monospace;
+                    border: 1px solid #E5E7EB;
+                }
+            """)
+            self.previewContent.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            self.previewContent.setMinimumHeight(300)
+            
+            previewScroll = QScrollArea()
+            previewScroll.setWidget(self.previewContent)
+            previewScroll.setWidgetResizable(True)
+            previewScroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+            previewCardLayout.addWidget(previewScroll)
+            
+            # 底部提示
+            previewHint = QLabel("实际内容将基于你的工作记录自动生成")
+            previewHint.setStyleSheet("font-size: 11px; color: #9CA3AF; border: none; background: transparent;")
+            previewHint.setAlignment(Qt.AlignCenter)
+            previewCardLayout.addWidget(previewHint)
+            
+            bodyLayout.addWidget(previewCard, 3)
+            
+            layout.addLayout(bodyLayout)
+            
+            scrollArea.setWidget(contentWidget)
+            mainLayout.addWidget(scrollArea)
+            
+            # 初始化
+            self.selectReportType(0)
+            self.selectTemplate(2)
+        
+        def selectReportType(self, index):
+            """选择报告类型"""
+            for i, btn in enumerate(self.typeButtons):
+                btn.setChecked(i == index)
+            
+            today = QDate.currentDate()
+            if index == 0:  # 日报
+                self.startDateEdit.setDate(today)
+                self.endDateEdit.setDate(today)
+            elif index == 1:  # 周报
+                monday = today.addDays(-(today.dayOfWeek() - 1))
+                sunday = monday.addDays(6)
+                self.startDateEdit.setDate(monday)
+                self.endDateEdit.setDate(sunday)
+            elif index == 2:  # 月报
+                first = QDate(today.year(), today.month(), 1)
+                last = first.addMonths(1).addDays(-1)
+                self.startDateEdit.setDate(first)
+                self.endDateEdit.setDate(last)
+            
+            self.updatePreviewDate()
+        
+        def selectTemplate(self, index):
+            """选择模板"""
+            self.selected_template_index = index
+            for i, card in enumerate(self.template_cards):
+                card.setSelected(i == index)
+            
+            template = REPORT_TEMPLATES[index]
+            self.previewNameLabel.setText(template["name"])
+            self.previewContent.setText(template["prompt"])
+        
+        def updatePreviewDate(self):
+            """更新预览日期"""
+            start = self.startDateEdit.date.toString("yyyy-MM-dd")
+            end = self.endDateEdit.date.toString("yyyy-MM-dd")
+            self.previewDateLabel.setText(f"时间范围：{start} 至 {end}")
+        
+        def showTemplatePreview(self, index):
+            """显示模板预览弹窗"""
+            template = REPORT_TEMPLATES[index]
+            dialog = TemplatePreviewDialog(index, template["name"], template["desc"], template["prompt"], self)
+            dialog.prompt_updated.connect(self.onPromptUpdated)
+            dialog.exec_()
+        
+        def onPromptUpdated(self, index, new_content):
+            """更新模板提示词"""
+            REPORT_TEMPLATES[index]["prompt"] = new_content
+            # 如果更新的是当前选中的模板，刷新预览
+            if index == self.selected_template_index:
+                self.previewContent.setText(new_content)
+            # 保存到文件
+            write_templates(REPORT_TEMPLATES)
+        
+        def onImportTemplate(self):
+            """导入模板"""
+            from PyQt5.QtWidgets import QFileDialog
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "导入模板", "",
+                "CSV Files (*.csv);;All Files (*)"
+            )
+            if file_path:
+                templates = import_templates(file_path)
+                if templates:
+                    # 添加导入的模板
+                    for template in templates:
+                        REPORT_TEMPLATES.append(template)
+                        add_template(template)
+                    
+                    # 重建模板网格
+                    self.rebuildTemplateGrid()
+                    
+                    InfoBar.success(
+                        title="导入成功",
+                        content=f"已导入 {len(templates)} 个模板",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=2000,
+                        parent=self
+                    )
+                else:
+                    InfoBar.error(
+                        title="导入失败",
+                        content="无法解析模板文件",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+        
+        def onExportTemplate(self):
+            """导出模板"""
+            from PyQt5.QtWidgets import QFileDialog
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "导出模板", "report_templates.csv",
+                "CSV Files (*.csv);;All Files (*)"
+            )
+            if file_path:
+                if export_templates(file_path):
+                    InfoBar.success(
+                        title="导出成功",
+                        content=f"模板已保存到: {file_path}",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+                else:
+                    InfoBar.error(
+                        title="导出失败",
+                        content="无法保存模板文件",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+        
+        def onCreateTemplate(self):
+            """打开创建模板弹窗"""
+            dialog = CreateTemplateDialog(self)
+            dialog.template_created.connect(self.addNewTemplate)
+            dialog.exec_()
+        
+        def addNewTemplate(self, template):
+            """添加新模板"""
+            REPORT_TEMPLATES.append(template)
+            add_template(template)  # 保存到文件
+            
+            # 重建模板网格
+            self.rebuildTemplateGrid()
+            
+            InfoBar.success(
+                title="创建成功",
+                content=f"模板「{template['name']}」已添加",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+        
+        def rebuildTemplateGrid(self):
+            """重建模板网格"""
+            # 清空现有卡片
+            for card in self.template_cards:
+                card.deleteLater()
+            self.template_cards.clear()
+            
+            # 清空网格
+            while self.templateGrid.count():
+                item = self.templateGrid.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            
+            # 重新创建模板卡片
+            for i, template in enumerate(REPORT_TEMPLATES):
+                card = TemplateCard(i, template["name"], template.get("intro", template["desc"]), template.get("is_cloud", True))
+                card.clicked.connect(self.selectTemplate)
+                card.preview_clicked.connect(self.showTemplatePreview)
+                card.delete_clicked.connect(self.deleteTemplate)
+                self.template_cards.append(card)
+                self.templateGrid.addWidget(card, i // 3, i % 3)
+        
+        def deleteTemplate(self, index):
+            """删除模板"""
+            if len(REPORT_TEMPLATES) <= 1:
+                InfoBar.warning(
+                    title="无法删除",
+                    content="至少需要保留一个模板",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+            
+            template_name = REPORT_TEMPLATES[index]["name"]
+            
+            # 确认删除
+            reply = QMessageBox.question(
+                self, "确认删除",
+                f"确定要删除模板「{template_name}」吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                # 从数据中删除
+                REPORT_TEMPLATES.pop(index)
+                delete_template(index)  # 保存到文件
+                
+                # 重建模板网格
+                self.rebuildTemplateGrid()
+                
+                # 如果删除的是当前选中的模板，选中第一个
+                if self.selected_template_index >= len(REPORT_TEMPLATES):
+                    self.selected_template_index = 0
+                
+                self.selectTemplate(self.selected_template_index)
+                
+                InfoBar.success(
+                    title="删除成功",
+                    content=f"模板「{template_name}」已删除",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+        
+        def onGenerate(self):
+            """开始生成报告"""
+            dialog = GenerateConfirmDialog(self)
+            dialog.stay_here.connect(self.simulateGenerate)
+            dialog.go_history.connect(self.goToHistory)
+            dialog.exec_()
+        
+        def simulateGenerate(self):
+            """生成报告"""
+            report_type = "日报"
+            for i, btn in enumerate(self.typeButtons):
+                if btn.isChecked():
+                    report_type = ["日报", "周报", "月报"][i]
+                    break
+            
+            start = self.startDateEdit.date.toString("yyyy-MM-dd")
+            end = self.endDateEdit.date.toString("yyyy-MM-dd")
+            date_range = f"{start} 至 {end}"
+            template_name = REPORT_TEMPLATES[self.selected_template_index]["name"]
+            template_prompt = REPORT_TEMPLATES[self.selected_template_index]["prompt"]
+            
+            # 打开结果弹窗（会自动启动生成）
+            dialog = ReportResultDialog(report_type, date_range, template_name, template_prompt, self)
+            dialog.exec_()
+        
+        def goToHistory(self):
+            """跳转到历史报告页面"""
+            print("[跳转] 查看历史报告页面")
+
     # ==================== 设置页面 ====================
     
     class ConnectionTestWorker(QThread):
@@ -2511,13 +4339,15 @@ def main():
             self.todayPage = TodayWorkPage(self)
             self.screenshotPage = ScreenshotPage(self, self)
             self.recordsPage = RecordsPage(self)
-            self.timelinePage = TimelinePage(self)  # 使用新的时间线页面
+            self.timelinePage = TimelinePage(self)
             self.monitorPage = MonitorPage(self)
+            self.reportPage = ReportPage(self)
             self.settingsPage = SettingsPage(self)
             
             # 添加导航项
             self.addSubInterface(self.todayPage, FluentIcon.HOME, "今日工作")
             self.addSubInterface(self.timelinePage, FluentIcon.PIE_SINGLE, "工作时间线")
+            self.addSubInterface(self.reportPage, FluentIcon.DOCUMENT, "生成报告")
             self.addSubInterface(self.monitorPage, FluentIcon.PLAY, "管理监控")
             self.addSubInterface(self.recordsPage, FluentIcon.DOCUMENT, "工作记录")
             self.addSubInterface(self.screenshotPage, FluentIcon.CAMERA, "截图分析（内测）")

@@ -81,6 +81,9 @@ def init_db():
             writer = csv.writer(f)
             writer.writerow(headers)  # 写入表头
         print(f"已创建记录文件: {RECORDS_FILE}")
+    
+    # 初始化报告模板数据库
+    init_templates_db()
 
 
 # ==================== 读取函数 ====================
@@ -387,3 +390,181 @@ if __name__ == '__main__':
     
     # 打印今日汇总
     print_today_summary()
+
+
+# ==================== 报告模板存储 ====================
+
+# 报告模板CSV文件路径
+TEMPLATES_FILE = os.path.join(DB_DIR, 'report_templates.csv')
+
+
+def get_default_templates():
+    """
+    获取默认报告模板
+    
+    返回值：模板列表
+    """
+    try:
+        from template import get_default_templates as _get_templates
+        return _get_templates()
+    except ImportError:
+        # 如果 template.py 不存在，返回最小模板
+        return [
+            {
+                "name": "工作日报",
+                "intro": "标准工作日报模板",
+                "desc": "标准工作日报模板，包含今日完成、进展、问题、计划。",
+                "is_cloud": True,
+                "prompt": "## 工作日报\n\n### 今日完成\n{{完成事项}}\n\n### 当前进展\n{{进展}}\n\n### 遇到的问题\n{{问题}}\n\n### 明日计划\n{{计划}}"
+            }
+        ]
+
+
+def init_templates_db():
+    """
+    初始化报告模板数据库
+    
+    功能：检查报告模板CSV文件是否存在，不存在则从默认模板创建
+    """
+    if not os.path.exists(TEMPLATES_FILE):
+        # 从默认模板创建
+        templates = get_default_templates()
+        write_templates(templates)
+        print(f"已从默认模板创建: {TEMPLATES_FILE}")
+
+
+def read_templates():
+    """
+    读取报告模板数据
+    
+    返回值：列表，每个元素是一个模板字典
+    """
+    if not os.path.exists(TEMPLATES_FILE):
+        init_templates_db()
+    
+    templates = []
+    with open(TEMPLATES_FILE, 'r', encoding='utf-8-sig') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # 转换 is_cloud 为布尔值
+            row['is_cloud'] = row.get('is_cloud', '').lower() == 'true'
+            # 确保 intro 字段存在
+            if 'intro' not in row:
+                row['intro'] = row.get('desc', '')[:20] + '...' if len(row.get('desc', '')) > 20 else row.get('desc', '')
+            templates.append(row)
+    
+    return templates if templates else DEFAULT_TEMPLATES.copy()
+
+
+def write_templates(templates):
+    """
+    写入报告模板数据
+    
+    参数：
+        templates: 列表，每个元素是一个模板字典
+    """
+    headers = ['name', 'intro', 'desc', 'is_cloud', 'prompt']
+    
+    with open(TEMPLATES_FILE, 'w', newline='', encoding='utf-8-sig') as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        for template in templates:
+            # 确保 is_cloud 是字符串
+            template['is_cloud'] = str(template.get('is_cloud', False))
+            # 确保 intro 字段存在
+            if 'intro' not in template:
+                template['intro'] = template.get('desc', '')[:20] + '...' if len(template.get('desc', '')) > 20 else template.get('desc', '')
+            writer.writerow(template)
+
+
+def add_template(template):
+    """
+    添加一个新的报告模板
+    
+    参数：
+        template: 字典，包含 name, desc, is_cloud, prompt
+    """
+    templates = read_templates()
+    templates.append(template)
+    write_templates(templates)
+
+
+def delete_template(index):
+    """
+    删除指定索引的报告模板
+    
+    参数：
+        index: 模板索引
+    
+    返回值：布尔值，表示是否删除成功
+    """
+    templates = read_templates()
+    if 0 <= index < len(templates) and len(templates) > 1:
+        templates.pop(index)
+        write_templates(templates)
+        return True
+    return False
+
+
+def update_template(index, template):
+    """
+    更新指定索引的报告模板
+    
+    参数：
+        index: 模板索引
+        template: 新的模板数据
+    """
+    templates = read_templates()
+    if 0 <= index < len(templates):
+        templates[index] = template
+        write_templates(templates)
+
+
+def export_templates(file_path):
+    """
+    导出报告模板到指定文件
+    
+    参数：
+        file_path: 导出文件路径
+    
+    返回值：布尔值，表示是否导出成功
+    """
+    try:
+        templates = read_templates()
+        headers = ['name', 'intro', 'desc', 'is_cloud', 'prompt']
+        
+        with open(file_path, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.DictWriter(f, fieldnames=headers, extrasaction='ignore')
+            writer.writeheader()
+            for template in templates:
+                template['is_cloud'] = str(template.get('is_cloud', False))
+                # 确保 intro 字段存在
+                if 'intro' not in template:
+                    template['intro'] = template.get('desc', '')[:30] + '...' if len(template.get('desc', '')) > 30 else template.get('desc', '')
+                writer.writerow(template)
+        return True
+    except Exception as e:
+        print(f"导出模板失败: {e}")
+        return False
+
+
+def import_templates(file_path):
+    """
+    从指定文件导入报告模板
+    
+    参数：
+        file_path: 导入文件路径
+    
+    返回值：导入的模板列表，失败返回空列表
+    """
+    try:
+        templates = []
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                row['is_cloud'] = row.get('is_cloud', '').lower() == 'true'
+                templates.append(row)
+        return templates
+    except Exception as e:
+        print(f"导入模板失败: {e}")
+        return []

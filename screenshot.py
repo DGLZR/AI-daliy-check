@@ -13,6 +13,7 @@ import store
 # GLM API配置
 GLM_API_KEY = "e0f50530805f4ed0af556c4040d99eb3.DkyxdRgrogMYAWqs"  # 用户需要填写自己的API Key
 GLM_MODEL = "glm-4.6v-flash"
+GLM_ONLYWORD_MODEL='glm-4.7-flash'
 
 # Ollama配置
 _custom_ollama_host = None
@@ -923,3 +924,302 @@ if __name__ == '__main__':
     monitors = get_monitor_info()
     for m in monitors:
         print(f"  {m['name']}: {m['resolution']}, {m['scale']}, {m['refresh_rate']}")
+
+
+# ==================== 报告生成算法 ====================
+
+def get_records_by_date_range(start_date, end_date):
+    """
+    获取指定日期范围内的工作记录
+    
+    参数:
+        start_date: 开始日期，格式 'YYYY-MM-DD'
+        end_date: 结束日期，格式 'YYYY-MM-DD'
+    
+    返回:
+        列表，包含所有符合条件的记录
+    """
+    from store import read_records
+    records = read_records()
+    return [r for r in records if start_date <= r.get('日期', '') <= end_date]
+
+
+def get_summary_by_date_range(start_date, end_date):
+    """
+    获取指定日期范围内的汇总数据
+    
+    参数:
+        start_date: 开始日期，格式 'YYYY-MM-DD'
+        end_date: 结束日期，格式 'YYYY-MM-DD'
+    
+    返回:
+        字典，包含汇总信息
+    """
+    from store import read_summary, WORK_TYPES
+    
+    summaries = read_summary()
+    filtered = {k: v for k, v in summaries.items() if start_date <= k <= end_date}
+    
+    if not filtered:
+        return {
+            'total_records': 0,
+            'total_hours': 0,
+            'main_work': '暂无',
+            'type_hours': {t: 0 for t in WORK_TYPES},
+            'date_count': 0
+        }
+    
+    total_records = 0
+    total_hours = 0
+    type_hours = {t: 0 for t in WORK_TYPES}
+    
+    for date, summary in filtered.items():
+        total_records += int(summary.get('记录条数', '0'))
+        total_hours += float(summary.get('使用时长(小时)', '0'))
+        for t in WORK_TYPES:
+            type_hours[t] += float(summary.get(f'{t}时长(小时)', '0'))
+    
+    main_work = max(type_hours, key=type_hours.get) if any(type_hours.values()) else '暂无'
+    
+    return {
+        'total_records': total_records,
+        'total_hours': round(total_hours, 2),
+        'main_work': main_work,
+        'type_hours': type_hours,
+        'date_count': len(filtered)
+    }
+
+
+def build_report_prompt(template_prompt, records, summary, start_date, end_date, report_type):
+    """
+    构建报告生成的提示词
+    
+    参数:
+        template_prompt: 模板提示词
+        records: 工作记录列表
+        summary: 汇总数据
+        start_date: 开始日期
+        end_date: 结束日期
+        report_type: 报告类型（日报/周报/月报）
+    
+    返回:
+        完整的提示词字符串
+    """
+    # 构建记录摘要（包含日期信息）
+    records_text = ""
+    if records:
+        # 按日期分组记录
+        from itertools import groupby
+        from operator import itemgetter
+        
+        # 按日期排序
+        sorted_records = sorted(records, key=lambda r: r.get('日期', ''))
+        
+        # 按日期分组
+        for date, group in groupby(sorted_records, key=lambda r: r.get('日期', '')):
+            records_text += f"\n### {date}\n"
+            for r in list(group)[:10]:  # 每天最多显示10条
+                time = r.get('时间', '')[:5]
+                work_type = r.get('工作类型', '其他')
+                desc = r.get('工作描述', '')
+                records_text += f"- [{time}] [{work_type}] {desc}\n"
+    else:
+        records_text = "暂无工作记录\n"
+    
+    # 构建时间分布（按小时统计）
+    hour_data = ""
+    for h in range(24):
+        count = sum(1 for r in records if r.get('时间', '').startswith(f'{h:02d}'))
+        if count > 0:
+            hour_data += f"  {h:02d}:00 - {count}条记录\n"
+    
+    if not hour_data:
+        hour_data = "  暂无记录\n"
+    
+    # 构建工作类型统计
+    type_stats = ""
+    from store import WORK_TYPES
+    for t in WORK_TYPES:
+        hours = summary['type_hours'].get(t, 0)
+        if hours > 0:
+            type_stats += f"- {t}: {hours:.1f}小时\n"
+    
+    if not type_stats:
+        type_stats = "暂无统计数据\n"
+    
+    # 统计每天的记录数
+    daily_stats = ""
+    if records:
+        from collections import Counter
+        date_counts = Counter(r.get('日期', '') for r in records)
+        for date in sorted(date_counts.keys()):
+            daily_stats += f"- {date}: {date_counts[date]}条记录\n"
+    
+    if not daily_stats:
+        daily_stats = "暂无记录\n"
+    
+    # 替换模板中的变量
+    prompt = template_prompt
+    prompt = prompt.replace("{record_count}", str(summary['total_records']))
+    prompt = prompt.replace("{duration_hours}", f"{summary['total_hours']}小时")
+    prompt = prompt.replace("{main_work}", summary['main_work'])
+    prompt = prompt.replace("{hour_data}", hour_data)
+    prompt = prompt.replace("{records}", records_text)
+    
+    # 构建完整提示词
+    full_prompt = f"""你是一个专业的工作报告撰写助手。请根据以下信息生成一份{report_type}。
+
+## 报告模板结构
+{prompt}
+
+## 工作记录数据
+日期范围: {start_date} 至 {end_date}
+总天数: {summary['date_count']}天
+记录条数: {summary['total_records']}条
+总工作时长: {summary['total_hours']}小时
+主要工作类型: {summary['main_work']}
+
+### 每日记录统计
+{daily_stats}
+
+### 详细工作记录（按日期分组）
+{records_text}
+
+### 工作类型统计
+{type_stats}
+
+### 时间分布
+{hour_data}
+
+## 重要要求
+1. 请严格按照模板结构生成报告
+2. 根据实际工作记录填充内容，注意记录分布在{summary['date_count']}天内
+3. 如果是周报或月报，请按日期或周汇总工作内容
+4. 语言简洁专业，适合工作汇报
+5. 如果某些部分没有对应数据，请合理补充说明
+6. 请直接输出报告内容，不要输出其他说明文字
+
+请开始生成报告："""
+    
+    return full_prompt
+
+
+def generate_report_stream(template_prompt, start_date, end_date, report_type, callback=None):
+    """
+    流式生成报告（使用当前选择的模型）
+    
+    参数:
+        template_prompt: 模板提示词
+        start_date: 开始日期，格式 'YYYY-MM-DD'
+        end_date: 结束日期，格式 'YYYY-MM-DD'
+        report_type: 报告类型（日报/周报/月报）
+        callback: 回调函数，用于流式输出，参数为 (chunk_text, is_finished)
+    
+    返回:
+        生成的报告内容
+    """
+    # 获取数据
+    records = get_records_by_date_range(start_date, end_date)
+    summary = get_summary_by_date_range(start_date, end_date)
+    
+    # 构建提示词
+    full_prompt = build_report_prompt(
+        template_prompt, records, summary, 
+        start_date, end_date, report_type
+    )
+    
+    # 根据当前选择的模型调用相应的生成函数
+    if _use_glm:
+        return _generate_with_glm_stream(full_prompt, callback)
+    else:
+        return _generate_with_ollama_stream(full_prompt, callback)
+
+
+def _generate_with_glm_stream(prompt, callback=None):
+    """
+    使用GLM模型流式生成报告
+    
+    参数:
+        prompt: 完整提示词
+        callback: 回调函数
+    
+    返回:
+        生成的报告内容
+    """
+    from zhipuai import ZhipuAI as ZhipuAiClient
+    
+    client = ZhipuAiClient(api_key=GLM_API_KEY)
+    
+    full_response = ""
+    
+    try:
+        response = client.chat.completions.create(
+            model=GLM_ONLYWORD_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True  # 启用流式输出
+        )
+        
+        for chunk in response:
+            if chunk.choices and chunk.choices[0].delta.content:
+                content = chunk.choices[0].delta.content
+                full_response += content
+                if callback:
+                    callback(content, False)
+        
+        if callback:
+            callback("", True)  # 通知完成
+        
+        return full_response
+    
+    except Exception as e:
+        error_msg = f"\n\n[生成失败: {str(e)}]"
+        full_response += error_msg
+        if callback:
+            callback(error_msg, True)
+        return full_response
+
+
+def _generate_with_ollama_stream(prompt, callback=None):
+    """
+    使用Ollama模型流式生成报告
+    
+    参数:
+        prompt: 完整提示词
+        callback: 回调函数
+    
+    返回:
+        生成的报告内容
+    """
+    host = _custom_ollama_host or 'http://192.168.31.23:11434'
+    model = _custom_ollama_model or 'minicpm-v4.6'
+    
+    client = ollama.Client(host=host)
+    
+    full_response = ""
+    
+    try:
+        response = client.chat(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            stream=True,  # 启用流式输出
+            keep_alive='1h'
+        )
+        
+        for chunk in response:
+            if 'message' in chunk and 'content' in chunk['message']:
+                content = chunk['message']['content']
+                full_response += content
+                if callback:
+                    callback(content, False)
+        
+        if callback:
+            callback("", True)  # 通知完成
+        
+        return full_response
+    
+    except Exception as e:
+        error_msg = f"\n\n[生成失败: {str(e)}]"
+        full_response += error_msg
+        if callback:
+            callback(error_msg, True)
+        return full_response
