@@ -73,8 +73,8 @@ def main():
                                  QSizePolicy, QPushButton, QTableWidget, QTableWidgetItem,
                                  QLineEdit, QDateEdit, QComboBox, QApplication,
                                  QMessageBox, QSystemTrayIcon, QMenu, QAction, QDialog,
-                                 QTextEdit)
-    from PyQt5.QtCore import Qt, QSize, QTimer, QDate, QPropertyAnimation, QEasingCurve, QDateTime, QThread, pyqtSignal
+                                 QTextEdit, QLayout, QSplitter)
+    from PyQt5.QtCore import Qt, QSize, QTimer, QDate, QPropertyAnimation, QEasingCurve, QDateTime, QThread, pyqtSignal, QRect, QPoint
     from PyQt5.QtGui import QFont, QColor, QPixmap, QPainter, QPainterPath, QBrush, QPen, QIcon
     from qfluentwidgets import (FluentWindow, NavigationItemPosition, StrongBodyLabel,
                                 TitleLabel, SubtitleLabel, BodyLabel, CaptionLabel,
@@ -2807,6 +2807,89 @@ def main():
                 btn.setEnabled(False)
             self.startGeneration()
     
+    class FlowLayout(QLayout):
+        """流式布局，根据宽度自动调整列数（最多3列）"""
+        def __init__(self, parent=None, margin=0, hSpacing=16, vSpacing=16, maxColumns=3):
+            super().__init__(parent)
+            self._hSpacing = hSpacing
+            self._vSpacing = vSpacing
+            self._maxColumns = maxColumns
+            self.setContentsMargins(margin, margin, margin, margin)
+            self._items = []
+        
+        def addItem(self, item):
+            self._items.append(item)
+        
+        def count(self):
+            return len(self._items)
+        
+        def itemAt(self, index):
+            if 0 <= index < len(self._items):
+                return self._items[index]
+            return None
+        
+        def takeAt(self, index):
+            if 0 <= index < len(self._items):
+                return self._items.pop(index)
+            return None
+        
+        def expandingDirections(self):
+            return Qt.Orientations(0)
+        
+        def hasHeightForWidth(self):
+            return True
+        
+        def heightForWidth(self, width):
+            return self._doLayout(QRect(0, 0, width, 0), testOnly=True)
+        
+        def setGeometry(self, rect):
+            super().setGeometry(rect)
+            self._doLayout(rect, testOnly=False)
+        
+        def sizeHint(self):
+            return self.minimumSize()
+        
+        def minimumSize(self):
+            size = QSize()
+            for item in self._items:
+                size = size.expandedTo(item.minimumSize())
+            margins = self.contentsMargins()
+            size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+            return size
+        
+        def _doLayout(self, rect, testOnly):
+            margins = self.contentsMargins()
+            effectiveRect = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom())
+            x = effectiveRect.x()
+            y = effectiveRect.y()
+            lineHeight = 0
+            columnCount = 0
+            
+            for item in self._items:
+                wid = item.widget()
+                spaceX = self._hSpacing
+                spaceY = self._vSpacing
+                
+                # 使用固定宽度280，或者sizeHint
+                itemWidth = 280
+                itemHeight = 140
+                
+                # 检查是否需要换行（超过最大列数或超过可用宽度）
+                if columnCount >= self._maxColumns or (columnCount > 0 and x + itemWidth > effectiveRect.right()):
+                    x = effectiveRect.x()
+                    y = y + lineHeight + spaceY
+                    lineHeight = 0
+                    columnCount = 0
+                
+                if not testOnly:
+                    item.setGeometry(QRect(QPoint(x, y), QSize(itemWidth, itemHeight)))
+                
+                x = x + itemWidth + spaceX
+                lineHeight = max(lineHeight, itemHeight)
+                columnCount += 1
+            
+            return y + lineHeight - rect.y() + margins.bottom()
+    
     class ReportPage(QWidget):
         """生成报告页面"""
         def __init__(self, parent=None):
@@ -3167,9 +3250,10 @@ def main():
             templateSubtitle.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
             templateCardLayout.addWidget(templateSubtitle)
             
-            # 模板网格
-            self.templateGrid = QGridLayout()
-            self.templateGrid.setSpacing(16)
+            # 模板网格（使用流式布局，根据宽度动态调整列数）
+            templateGridWidget = QWidget()
+            templateGridWidget.setStyleSheet("background: transparent; border: none;")
+            self.templateFlowLayout = FlowLayout(templateGridWidget, margin=0, hSpacing=16, vSpacing=16)
             
             for i, template in enumerate(REPORT_TEMPLATES):
                 card = TemplateCard(i, template["name"], template.get("intro", template["desc"]), template.get("is_cloud", True))
@@ -3177,13 +3261,19 @@ def main():
                 card.preview_clicked.connect(self.showTemplatePreview)
                 card.delete_clicked.connect(self.deleteTemplate)
                 self.template_cards.append(card)
-                self.templateGrid.addWidget(card, i // 3, i % 3)
+                self.templateFlowLayout.addWidget(card)
             
-            templateCardLayout.addLayout(self.templateGrid)
+            # 将模板网格放在滚动区域中
+            templateScrollArea = QScrollArea()
+            templateScrollArea.setWidgetResizable(True)
+            templateScrollArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            templateScrollArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            templateScrollArea.setStyleSheet("QScrollArea { border: none; background: transparent; } QScrollBar { width: 0px; height: 0px; }")
+            templateScrollArea.setWidget(templateGridWidget)
+            
+            templateCardLayout.addWidget(templateScrollArea)
             
             leftLayout.addWidget(templateCard)
-            
-            bodyLayout.addLayout(leftLayout, 7)
             
             # 右栏：模板预览
             previewCard = QFrame()
@@ -3274,7 +3364,9 @@ def main():
             previewScroll = QScrollArea()
             previewScroll.setWidget(self.previewContent)
             previewScroll.setWidgetResizable(True)
-            previewScroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+            previewScroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            previewScroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            previewScroll.setStyleSheet("QScrollArea { border: none; background: transparent; } QScrollBar { width: 0px; height: 0px; }")
             previewCardLayout.addWidget(previewScroll)
             
             # 底部提示
@@ -3283,7 +3375,32 @@ def main():
             previewHint.setAlignment(Qt.AlignCenter)
             previewCardLayout.addWidget(previewHint)
             
-            bodyLayout.addWidget(previewCard, 3)
+            # 使用 QSplitter 实现可调整的左右布局
+            self.splitter = QSplitter(Qt.Horizontal)
+            self.splitter.setHandleWidth(8)
+            self.splitter.setStyleSheet("""
+                QSplitter::handle {
+                    background-color: #E5E7EB;
+                    border-radius: 4px;
+                    margin: 4px 0;
+                }
+                QSplitter::handle:hover {
+                    background-color: #D1D5DB;
+                }
+            """)
+            
+            # 左栏容器
+            leftWidget = QWidget()
+            leftWidget.setLayout(leftLayout)
+            self.splitter.addWidget(leftWidget)
+            
+            # 右栏容器
+            self.splitter.addWidget(previewCard)
+            
+            # 设置初始大小比例
+            self.splitter.setSizes([700, 300])
+            
+            bodyLayout.addWidget(self.splitter)
             
             layout.addLayout(bodyLayout)
             
@@ -3459,9 +3576,9 @@ def main():
                 card.deleteLater()
             self.template_cards.clear()
             
-            # 清空网格
-            while self.templateGrid.count():
-                item = self.templateGrid.takeAt(0)
+            # 清空流式布局
+            while self.templateFlowLayout.count():
+                item = self.templateFlowLayout.takeAt(0)
                 if item.widget():
                     item.widget().deleteLater()
             
@@ -3472,7 +3589,7 @@ def main():
                 card.preview_clicked.connect(self.showTemplatePreview)
                 card.delete_clicked.connect(self.deleteTemplate)
                 self.template_cards.append(card)
-                self.templateGrid.addWidget(card, i // 3, i % 3)
+                self.templateFlowLayout.addWidget(card)
         
         def deleteTemplate(self, index):
             """删除模板"""
@@ -4400,7 +4517,7 @@ def main():
             self.addSubInterface(self.timelinePage, FluentIcon.PIE_SINGLE, "工作时间线")
             self.addSubInterface(self.reportPage, FluentIcon.DOCUMENT, "生成报告")
             self.addSubInterface(self.monitorPage, FluentIcon.PLAY, "管理监控")
-            self.addSubInterface(self.recordsPage, FluentIcon.DOCUMENT, "工作记录")
+            self.addSubInterface(self.recordsPage, FluentIcon.DOCUMENT, "工作记录（内测）")
             self.addSubInterface(self.screenshotPage, FluentIcon.CAMERA, "截图分析（内测）")
             self.addSubInterface(self.settingsPage, FluentIcon.SETTING, "设置",
                                 NavigationItemPosition.BOTTOM)
