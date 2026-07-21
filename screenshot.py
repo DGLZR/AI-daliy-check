@@ -7,7 +7,51 @@ import csv
 import os
 import json
 from datetime import datetime
+import time
 import store
+
+# ==================== 重试配置 ====================
+
+MAX_RETRIES = 5  # 最大重试次数
+RETRY_DELAY = 1  # 重试间隔（秒）
+OVERLOAD_KEYWORD = "该模型当前访问量过大"  # 过载关键词
+
+
+def is_overload_error(error_msg):
+    """检查是否是过载错误"""
+    return OVERLOAD_KEYWORD in str(error_msg)
+
+
+def retry_on_overload(func):
+    """重试装饰器，当遇到过载错误时自动重试"""
+    def wrapper(*args, **kwargs):
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                result = func(*args, **kwargs)
+                # 检查返回结果是否包含过载信息
+                if isinstance(result, dict):
+                    desc = result.get('description', '')
+                    if is_overload_error(desc):
+                        raise Exception(desc)
+                return result
+            except Exception as e:
+                last_error = e
+                error_msg = str(e)
+                if is_overload_error(error_msg):
+                    if attempt < MAX_RETRIES - 1:
+                        print(f"[重试] 模型访问量过大，{RETRY_DELAY}秒后重试... (第{attempt + 1}/{MAX_RETRIES}次)")
+                        time.sleep(RETRY_DELAY)
+                    else:
+                        print(f"[失败] 已重试{MAX_RETRIES}次，仍无法访问模型")
+                        raise Exception(f"模型访问量过大，已重试{MAX_RETRIES}次仍无法访问，请稍后再试")
+                else:
+                    # 非过载错误，直接抛出
+                    raise
+        raise last_error
+    return wrapper
+
+
 # ==================== 配置变量 ====================
 
 # GLM API配置
@@ -430,8 +474,9 @@ def ollama_recognize():
 
 # ==================== 统一识别接口 ====================
 
+@retry_on_overload
 def recognize():
-    """统一识别接口，根据配置选择使用GLM或Ollama"""
+    """统一识别接口，根据配置选择使用GLM或Ollama，支持自动重试"""
     if _use_glm:
         return glm_recognize()
     else:
@@ -1137,7 +1182,7 @@ def generate_report_stream(template_prompt, start_date, end_date, report_type, c
 
 def _generate_with_glm_stream(prompt, callback=None):
     """
-    使用GLM模型流式生成报告
+    使用GLM模型流式生成报告，支持自动重试
     
     参数:
         prompt: 完整提示词
@@ -1151,37 +1196,64 @@ def _generate_with_glm_stream(prompt, callback=None):
     client = ZhipuAiClient(api_key=GLM_API_KEY)
     
     full_response = ""
+    last_error = None
     
-    try:
-        response = client.chat.completions.create(
-            model=GLM_ONLYWORD_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            stream=True  # 启用流式输出
-        )
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = client.chat.completions.create(
+                model=GLM_ONLYWORD_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                stream=True  # 启用流式输出
+            )
+            
+            for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    full_response += content
+                    if callback:
+                        callback(content, False)
+            
+            if callback:
+                callback("", True)  # 通知完成
+            
+            return full_response
         
-        for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                content = chunk.choices[0].delta.content
-                full_response += content
+        except Exception as e:
+            last_error = e
+            error_msg = str(e)
+            if is_overload_error(error_msg):
+                if attempt < MAX_RETRIES - 1:
+                    retry_msg = f"\n\n[重试] 模型访问量过大，{RETRY_DELAY}秒后重试... (第{attempt + 1}/{MAX_RETRIES}次)"
+                    full_response += retry_msg
+                    if callback:
+                        callback(retry_msg, False)
+                    time.sleep(RETRY_DELAY)
+                else:
+                    final_msg = f"\n\n[失败] 已重试{MAX_RETRIES}次，模型仍无法访问，请稍后再试"
+                    full_response += final_msg
+                    if callback:
+                        callback(final_msg, True)
+                    return full_response
+            else:
+                # 非过载错误
+                error_msg = f"\n\n[生成失败: {error_msg}]"
+                full_response += error_msg
                 if callback:
-                    callback(content, False)
-        
-        if callback:
-            callback("", True)  # 通知完成
-        
-        return full_response
+                    callback(error_msg, True)
+                return full_response
     
-    except Exception as e:
-        error_msg = f"\n\n[生成失败: {str(e)}]"
+    # 不应该到达这里，但以防万一
+    if last_error:
+        error_msg = f"\n\n[生成失败: {str(last_error)}]"
         full_response += error_msg
         if callback:
             callback(error_msg, True)
-        return full_response
+    return full_response
 
 
 def _generate_with_ollama_stream(prompt, callback=None):
     """
-    使用Ollama模型流式生成报告
+    使用Ollama模型流式生成报告，支持自动重试
     
     参数:
         prompt: 完整提示词
@@ -1196,30 +1268,57 @@ def _generate_with_ollama_stream(prompt, callback=None):
     client = ollama.Client(host=host)
     
     full_response = ""
+    last_error = None
     
-    try:
-        response = client.chat(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            stream=True,  # 启用流式输出
-            keep_alive='1h'
-        )
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = client.chat(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                stream=True,  # 启用流式输出
+                keep_alive='1h'
+            )
+            
+            for chunk in response:
+                if 'message' in chunk and 'content' in chunk['message']:
+                    content = chunk['message']['content']
+                    full_response += content
+                    if callback:
+                        callback(content, False)
+            
+            if callback:
+                callback("", True)  # 通知完成
+            
+            return full_response
         
-        for chunk in response:
-            if 'message' in chunk and 'content' in chunk['message']:
-                content = chunk['message']['content']
-                full_response += content
+        except Exception as e:
+            last_error = e
+            error_msg = str(e)
+            if is_overload_error(error_msg):
+                if attempt < MAX_RETRIES - 1:
+                    retry_msg = f"\n\n[重试] 模型访问量过大，{RETRY_DELAY}秒后重试... (第{attempt + 1}/{MAX_RETRIES}次)"
+                    full_response += retry_msg
+                    if callback:
+                        callback(retry_msg, False)
+                    time.sleep(RETRY_DELAY)
+                else:
+                    final_msg = f"\n\n[失败] 已重试{MAX_RETRIES}次，模型仍无法访问，请稍后再试"
+                    full_response += final_msg
+                    if callback:
+                        callback(final_msg, True)
+                    return full_response
+            else:
+                # 非过载错误
+                error_msg = f"\n\n[生成失败: {error_msg}]"
+                full_response += error_msg
                 if callback:
-                    callback(content, False)
-        
-        if callback:
-            callback("", True)  # 通知完成
-        
-        return full_response
+                    callback(error_msg, True)
+                return full_response
     
-    except Exception as e:
-        error_msg = f"\n\n[生成失败: {str(e)}]"
+    # 不应该到达这里，但以防万一
+    if last_error:
+        error_msg = f"\n\n[生成失败: {str(last_error)}]"
         full_response += error_msg
         if callback:
             callback(error_msg, True)
-        return full_response
+    return full_response

@@ -2925,7 +2925,7 @@ def main():
             contentWidget.setStyleSheet("background-color: #F7F8F7; border: none;")
             layout = QVBoxLayout(contentWidget)
             layout.setContentsMargins(32, 24, 32, 24)
-            layout.setSpacing(24)
+            layout.setSpacing(5)  # 报告配置与报告类型之间的间距
             
             # ========== 顶部标题栏 ==========
             headerCard = QFrame()
@@ -3046,7 +3046,7 @@ def main():
             
             # 左栏
             leftLayout = QVBoxLayout()
-            leftLayout.setSpacing(24)
+            leftLayout.setSpacing(5)  # 报告类型卡片与选择报告模板卡片之间的间距
             
             # 左栏第一张卡片：报告类型 + 时间范围
             typeCard = QFrame()
@@ -3171,7 +3171,7 @@ def main():
                 }
             """)
             templateCardLayout = QVBoxLayout(templateCard)
-            templateCardLayout.setContentsMargins(24, 20, 24, 20)
+            templateCardLayout.setContentsMargins(24, 5, 24, 20)  # 上边距改为5px
             templateCardLayout.setSpacing(16)
             
             # 卡片头部
@@ -3284,6 +3284,9 @@ def main():
             templateScrollArea.setWidget(templateGridWidget)
             
             templateCardLayout.addWidget(templateScrollArea)
+            
+            # 设置模板卡片的下边距为5px
+            templateCardLayout.setContentsMargins(24, 5, 24, 5)
             
             leftLayout.addWidget(templateCard)
             
@@ -5440,7 +5443,7 @@ def main():
             aboutLayout.addWidget(aboutTitle)
             
             aboutText = QLabel(
-                "工作日报助手 v1.0\n"
+                "工作日报助手 v0.21\n"
                 "自动截图分析工作内容，生成工作日报。"
             )
             aboutText.setWordWrap(True)
