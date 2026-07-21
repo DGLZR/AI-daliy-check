@@ -58,8 +58,8 @@ Supports 14 automatic work type classifications:
 
 ## TODO
 
-- [ ] The AI Daily/Weekly/Monthly Summary.
-- [ ] The Introduct Website which will include the download servic
+- [ ]  Include an updated time period heatmap
+- [ ] 
 - [ ] 
 - [ ] 
 - [ ] 
