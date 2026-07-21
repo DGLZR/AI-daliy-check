@@ -3666,13 +3666,7 @@ def main():
                 )
                 return
             
-            dialog = GenerateConfirmDialog(self)
-            dialog.stay_here.connect(self.simulateGenerate)
-            dialog.go_history.connect(self.goToHistory)
-            dialog.exec_()
-        
-        def simulateGenerate(self):
-            """生成报告"""
+            # 获取报告参数
             report_type = "日报"
             for i, btn in enumerate(self.typeButtons):
                 if btn.isChecked():
@@ -3685,14 +3679,30 @@ def main():
             template_name = REPORT_TEMPLATES[self.selected_template_index]["name"]
             template_prompt = REPORT_TEMPLATES[self.selected_template_index]["prompt"]
             
-            # 打开结果弹窗（会自动启动生成）
-            dialog = ReportResultDialog(report_type, date_range, template_name, template_prompt, self)
-            dialog.report_generated.connect(self.report_generated.emit)
+            # 在后台开始生成报告
+            self.resultDialog = ReportResultDialog(report_type, date_range, template_name, template_prompt, self)
+            self.resultDialog.report_generated.connect(self.report_generated.emit)
+            
+            # 显示确认弹窗
+            dialog = GenerateConfirmDialog(self)
+            dialog.go_history.connect(self.goToHistory)
+            dialog.stay_here.connect(self.resultDialog.show)
             dialog.exec_()
+        
+        def simulateGenerate(self):
+            """生成报告（保留兼容性）"""
+            pass
         
         def goToHistory(self):
             """跳转到历史报告页面"""
-            print("[跳转] 查看历史报告页面")
+            # 获取主窗口
+            main_window = self.window()
+            # 使用 MainWindow 的 switchToPage 方法
+            if hasattr(main_window, 'switchToPage'):
+                main_window.switchToPage('historyReportPage')
+            # 刷新历史报告列表
+            if hasattr(main_window, 'historyReportPage'):
+                main_window.historyReportPage.refreshList()
 
     # ==================== 设置页面 ====================
     
@@ -6001,6 +6011,25 @@ def main():
             
             # 标志是否从托盘恢复
             self._was_minimized = False
+            
+            # 保存页面引用映射
+            self._page_map = {
+                'todayPage': self.todayPage,
+                'timelinePage': self.timelinePage,
+                'reportPage': self.reportPage,
+                'historyReportPage': self.historyReportPage,
+                'monitorPage': self.monitorPage,
+                'recordsPage': self.recordsPage,
+                'screenshotPage': self.screenshotPage,
+                'settingsPage': self.settingsPage
+            }
+        
+        def switchToPage(self, page_name):
+            """切换到指定页面"""
+            if page_name in self._page_map:
+                page = self._page_map[page_name]
+                # 使用 FluentWindow 的切换页面方法
+                self.stackedWidget.setCurrentWidget(page)
         
         def setupSystemTray(self):
             """设置系统托盘图标和菜单"""
