@@ -1,0 +1,1 @@
+pyinstaller --onefile --windowed --icon="C:\Users\20057\Desktop\frog.ico" --name 工作日报助手 "E:\AI\UI\main_fluent.py"
