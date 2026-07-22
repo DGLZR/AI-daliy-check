@@ -13,6 +13,31 @@ import sys; sys.setrecursionlimit(sys.getrecursionlimit() * 5)
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# 顶部导入 PyQt5 组件（供 LoginWindow 使用）
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QApplication
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QPixmap, QPainter, QPainterPath
+from datetime import datetime, timedelta, timezone
+
+# 东八区时区
+CST = timezone(timedelta(hours=8))
+
+
+def get_now():
+    """获取东八区当前时间"""
+    return datetime.now(CST)
+
+
+def get_today():
+    """获取东八区今天的日期字符串"""
+    return get_now().strftime('%Y-%m-%d')
+
+
+def get_current_time():
+    """获取东八区当前时间字符串"""
+    return get_now().strftime('%H:%M:%S')
+
+
 SCALE_FACTOR = 1.0
 
 
@@ -46,6 +71,581 @@ def get_system_dpi_scale():
             return 1.0
     except:
         return 1.0
+
+
+# ==================== 登录窗口 ====================
+
+# API 配置
+API_BASE_URL = "http://129.204.12.226"
+
+class LoginWindow(QWidget):
+    """登录/注册窗口 - Fluent Design 风格"""
+    login_success = pyqtSignal()  # 登录成功信号
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.is_login_mode = True  # True=登录模式, False=注册模式
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """设置界面"""
+        self.setWindowTitle("工作日报助手 - 登录")
+        self.setFixedSize(420, 520)
+        self.setStyleSheet("background-color: #F7F8F7;")
+        
+        # 主布局
+        mainLayout = QVBoxLayout(self)
+        mainLayout.setContentsMargins(40, 30, 40, 30)
+        mainLayout.setSpacing(0)
+        
+        # ========== 顶部 Logo 区域 ==========
+        logoLayout = QHBoxLayout()
+        logoLayout.setSpacing(12)
+        
+        # Logo 图标（使用图片）
+        logoIcon = QLabel()
+        logoIcon.setFixedSize(48, 48)
+        logoIcon.setAlignment(Qt.AlignCenter)
+        
+        # 加载头像图片
+        avatar_path = r"C:\Users\20057\Desktop\frog.jpg"
+        if os.path.exists(avatar_path):
+            pixmap = QPixmap(avatar_path)
+            pixmap = pixmap.scaled(48, 48, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            
+            # 创建圆形头像
+            rounded = QPixmap(48, 48)
+            rounded.fill(Qt.transparent)
+            painter = QPainter(rounded)
+            painter.setRenderHint(QPainter.Antialiasing)
+            path = QPainterPath()
+            path.addEllipse(0, 0, 48, 48)
+            painter.setClipPath(path)
+            painter.drawPixmap(0, 0, pixmap)
+            painter.end()
+            
+            logoIcon.setPixmap(rounded)
+        else:
+            logoIcon.setStyleSheet("""
+                QLabel {
+                    background-color: #16A34A;
+                    border-radius: 12px;
+                    font-size: 24px;
+                    color: white;
+                }
+            """)
+            logoIcon.setText("🐸")
+        
+        logoLayout.addWidget(logoIcon)
+        
+        # 标题
+        titleLayout = QVBoxLayout()
+        titleLayout.setSpacing(2)
+        
+        titleLabel = QLabel("工作日报助手")
+        titleLabel.setStyleSheet("font-size: 20px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+        titleLayout.addWidget(titleLabel)
+        
+        subtitleLabel = QLabel("AI 驱动的智能工作报告工具")
+        subtitleLabel.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
+        titleLayout.addWidget(subtitleLabel)
+        
+        logoLayout.addLayout(titleLayout)
+        logoLayout.addStretch()
+        
+        mainLayout.addLayout(logoLayout)
+        mainLayout.addSpacing(30)
+        
+        # ========== 登录/注册标题行 ==========
+        headerLayout = QHBoxLayout()
+        headerLayout.setSpacing(8)
+        
+        self.modeTitle = QLabel("登录")
+        self.modeTitle.setStyleSheet("font-size: 22px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+        headerLayout.addWidget(self.modeTitle)
+        
+        headerLayout.addStretch()
+        
+        # 切换按钮
+        self.switchBtn = QPushButton("注册")
+        self.switchBtn.setCursor(Qt.PointingHandCursor)
+        self.switchBtn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #16A34A;
+                font-size: 14px;
+                font-weight: bold;
+                border: none;
+                padding: 4px 8px;
+            }
+            QPushButton:hover {
+                color: #15803D;
+            }
+        """)
+        self.switchBtn.clicked.connect(self.toggle_mode)
+        headerLayout.addWidget(self.switchBtn)
+        
+        mainLayout.addLayout(headerLayout)
+        mainLayout.addSpacing(8)
+        
+        # 副标题
+        self.modeSubtitle = QLabel("请输入您的账号信息")
+        self.modeSubtitle.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
+        mainLayout.addWidget(self.modeSubtitle)
+        mainLayout.addSpacing(24)
+        
+        # ========== 邮箱输入框 ==========
+        emailLabel = QLabel("邮箱")
+        emailLabel.setStyleSheet("font-size: 12px; font-weight: bold; color: #374151; border: none; background: transparent;")
+        mainLayout.addWidget(emailLabel)
+        mainLayout.addSpacing(6)
+        
+        emailContainer = QWidget()
+        emailContainer.setStyleSheet("background: transparent; border: none;")
+        emailLayout = QHBoxLayout(emailContainer)
+        emailLayout.setContentsMargins(0, 0, 0, 0)
+        emailLayout.setSpacing(8)
+        
+        self.emailInput = QLineEdit()
+        self.emailInput.setPlaceholderText("请输入邮箱地址")
+        self.emailInput.setFixedHeight(42)
+        self.emailInput.setStyleSheet("""
+            QLineEdit {
+                background-color: white;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                padding: 0 14px;
+                font-size: 13px;
+                color: #1a1a1a;
+            }
+            QLineEdit:focus {
+                border: 2px solid #16A34A;
+            }
+        """)
+        emailLayout.addWidget(self.emailInput, 1)
+        
+        # 发送验证码按钮（注册模式显示）
+        self.sendCodeBtn = QPushButton("发送验证码")
+        self.sendCodeBtn.setCursor(Qt.PointingHandCursor)
+        self.sendCodeBtn.setFixedSize(100, 42)
+        self.sendCodeBtn.setStyleSheet("""
+            QPushButton {
+                background-color: #16A34A;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #15803D;
+            }
+            QPushButton:disabled {
+                background-color: #A5D6A7;
+            }
+        """)
+        self.sendCodeBtn.clicked.connect(self.send_verification_code)
+        self.sendCodeBtn.setVisible(False)
+        emailLayout.addWidget(self.sendCodeBtn)
+        
+        mainLayout.addWidget(emailContainer)
+        mainLayout.addSpacing(16)
+        
+        # ========== 密码输入框 ==========
+        passwordLabel = QLabel("密码")
+        passwordLabel.setStyleSheet("font-size: 12px; font-weight: bold; color: #374151; border: none; background: transparent;")
+        mainLayout.addWidget(passwordLabel)
+        mainLayout.addSpacing(6)
+        
+        self.passwordInput = QLineEdit()
+        self.passwordInput.setPlaceholderText("请输入密码")
+        self.passwordInput.setFixedHeight(42)
+        self.passwordInput.setEchoMode(QLineEdit.Password)
+        self.passwordInput.setStyleSheet("""
+            QLineEdit {
+                background-color: white;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                padding: 0 14px;
+                font-size: 13px;
+                color: #1a1a1a;
+            }
+            QLineEdit:focus {
+                border: 2px solid #16A34A;
+            }
+        """)
+        mainLayout.addWidget(self.passwordInput)
+        mainLayout.addSpacing(16)
+        
+        # ========== 验证码输入框（注册模式显示）==========
+        self.codeLabel = QLabel("验证码")
+        self.codeLabel.setStyleSheet("font-size: 12px; font-weight: bold; color: #374151; border: none; background: transparent;")
+        self.codeLabel.setVisible(False)
+        mainLayout.addWidget(self.codeLabel)
+        mainLayout.addSpacing(6)
+        
+        self.codeInput = QLineEdit()
+        self.codeInput.setPlaceholderText("请输入验证码")
+        self.codeInput.setFixedHeight(42)
+        self.codeInput.setStyleSheet("""
+            QLineEdit {
+                background-color: white;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+                padding: 0 14px;
+                font-size: 13px;
+                color: #1a1a1a;
+            }
+            QLineEdit:focus {
+                border: 2px solid #16A34A;
+            }
+        """)
+        self.codeInput.setVisible(False)
+        mainLayout.addWidget(self.codeInput)
+        
+        mainLayout.addSpacing(24)
+        
+        # ========== 登录/注册按钮 ==========
+        self.submitBtn = QPushButton("登录")
+        self.submitBtn.setFixedHeight(44)
+        self.submitBtn.setCursor(Qt.PointingHandCursor)
+        self.submitBtn.setStyleSheet("""
+            QPushButton {
+                background-color: #16A34A;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 15px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #15803D;
+            }
+            QPushButton:pressed {
+                background-color: #14532D;
+            }
+        """)
+        self.submitBtn.clicked.connect(self.on_submit)
+        mainLayout.addWidget(self.submitBtn)
+        
+        mainLayout.addStretch()
+        
+        # ========== 底部提示 ==========
+        bottomLayout = QHBoxLayout()
+        bottomLayout.setSpacing(4)
+        
+        tipLabel = QLabel("登录即表示同意")
+        tipLabel.setStyleSheet("font-size: 11px; color: #9CA3AF; border: none; background: transparent;")
+        bottomLayout.addWidget(tipLabel)
+        
+        termsBtn = QPushButton("服务条款")
+        termsBtn.setCursor(Qt.PointingHandCursor)
+        termsBtn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #16A34A;
+                font-size: 11px;
+                border: none;
+                padding: 0;
+            }
+            QPushButton:hover {
+                color: #15803D;
+            }
+        """)
+        bottomLayout.addWidget(termsBtn)
+        
+        andLabel = QLabel("和")
+        andLabel.setStyleSheet("font-size: 11px; color: #9CA3AF; border: none; background: transparent;")
+        bottomLayout.addWidget(andLabel)
+        
+        privacyBtn = QPushButton("隐私政策")
+        privacyBtn.setCursor(Qt.PointingHandCursor)
+        privacyBtn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #16A34A;
+                font-size: 11px;
+                border: none;
+                padding: 0;
+            }
+            QPushButton:hover {
+                color: #15803D;
+            }
+        """)
+        bottomLayout.addWidget(privacyBtn)
+        bottomLayout.addStretch()
+        
+        mainLayout.addLayout(bottomLayout)
+    
+    def toggle_mode(self):
+        """切换登录/注册模式"""
+        self.is_login_mode = not self.is_login_mode
+        
+        if self.is_login_mode:
+            # 切换到登录模式
+            self.modeTitle.setText("登录")
+            self.switchBtn.setText("注册")
+            self.modeSubtitle.setText("请输入您的账号信息")
+            self.submitBtn.setText("登录")
+            self.sendCodeBtn.setVisible(False)
+            self.codeLabel.setVisible(False)
+            self.codeInput.setVisible(False)
+            self.passwordInput.setPlaceholderText("请输入密码")
+        else:
+            # 切换到注册模式
+            self.modeTitle.setText("注册")
+            self.switchBtn.setText("登录")
+            self.modeSubtitle.setText("创建新账号开始使用")
+            self.submitBtn.setText("注册")
+            self.sendCodeBtn.setVisible(True)
+            self.codeLabel.setVisible(True)
+            self.codeInput.setVisible(True)
+            self.passwordInput.setPlaceholderText("设置密码（至少6位）")
+    
+    def send_verification_code(self):
+        """发送验证码"""
+        import requests
+        
+        email = self.emailInput.text().strip()
+        if not email:
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.warning(
+                title="提示",
+                content="请输入邮箱地址",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+            return
+        
+        # 调用发送验证码接口
+        self.sendCodeBtn.setEnabled(False)
+        self.sendCodeBtn.setText("发送中...")
+        
+        try:
+            response = requests.post(
+                f"{API_BASE_URL}/api/send-code",
+                json={"email": email},
+                timeout=10
+            )
+            result = response.json()
+            
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            if result.get('success'):
+                InfoBar.success(
+                    title="发送成功",
+                    content=result.get('message', f"验证码已发送到 {email}"),
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                self.sendCodeBtn.setText("已发送")
+                # 60秒后重新启用
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(60000, lambda: [
+                    self.sendCodeBtn.setEnabled(True),
+                    self.sendCodeBtn.setText("发送验证码")
+                ])
+            else:
+                InfoBar.error(
+                    title="发送失败",
+                    content=result.get('message', '发送验证码失败'),
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                self.sendCodeBtn.setEnabled(True)
+                self.sendCodeBtn.setText("发送验证码")
+        except Exception as e:
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.error(
+                title="连接失败",
+                content=f"无法连接到服务器: {str(e)}",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=3000,
+                parent=self
+            )
+            self.sendCodeBtn.setEnabled(True)
+            self.sendCodeBtn.setText("发送验证码")
+    
+    def on_submit(self):
+        """提交登录/注册"""
+        import requests
+        
+        email = self.emailInput.text().strip()
+        password = self.passwordInput.text().strip()
+        
+        if not email or not password:
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.warning(
+                title="提示",
+                content="请填写完整信息",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+            return
+        
+        if self.is_login_mode:
+            # 登录逻辑
+            self.submitBtn.setEnabled(False)
+            self.submitBtn.setText("登录中...")
+            
+            try:
+                response = requests.post(
+                    f"{API_BASE_URL}/api/login",
+                    json={"email": email, "password": password},
+                    timeout=10
+                )
+                result = response.json()
+                
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                if result.get('success'):
+                    InfoBar.success(
+                        title="登录成功",
+                        content=result.get('message', '欢迎回来'),
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=2000,
+                        parent=self
+                    )
+                    # 保存登录状态（包含密码用于数据同步）
+                    self.save_login_state(email, password)
+                    self.login_success.emit()
+                    self.close()
+                else:
+                    InfoBar.error(
+                        title="登录失败",
+                        content=result.get('message', '邮箱或密码错误'),
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+                    self.submitBtn.setEnabled(True)
+                    self.submitBtn.setText("登录")
+            except Exception as e:
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                InfoBar.error(
+                    title="连接失败",
+                    content=f"无法连接到服务器: {str(e)}",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                self.submitBtn.setEnabled(True)
+                self.submitBtn.setText("登录")
+        else:
+            # 注册逻辑
+            code = self.codeInput.text().strip()
+            if not code:
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                InfoBar.warning(
+                    title="提示",
+                    content="请输入验证码",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+            
+            self.submitBtn.setEnabled(False)
+            self.submitBtn.setText("注册中...")
+            
+            try:
+                response = requests.post(
+                    f"{API_BASE_URL}/api/register",
+                    json={"email": email, "password": password, "code": code},
+                    timeout=10
+                )
+                result = response.json()
+                
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                if result.get('success'):
+                    InfoBar.success(
+                        title="注册成功",
+                        content=result.get('message', '请使用新账号登录'),
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+                    self.toggle_mode()  # 切换回登录模式
+                else:
+                    InfoBar.error(
+                        title="注册失败",
+                        content=result.get('message', '注册失败'),
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+                self.submitBtn.setEnabled(True)
+                self.submitBtn.setText("注册")
+            except Exception as e:
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                InfoBar.error(
+                    title="连接失败",
+                    content=f"无法连接到服务器: {str(e)}",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                self.submitBtn.setEnabled(True)
+                self.submitBtn.setText("注册")
+    
+    def save_login_state(self, email, password=None):
+        """保存登录状态"""
+        import json
+        from datetime import datetime
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+        os.makedirs(config_dir, exist_ok=True)
+        config_file = os.path.join(config_dir, 'login_state.json')
+        
+        state = {
+            'email': email,
+            'login_time': get_now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        if password:
+            state['password'] = password
+        
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(state, f, ensure_ascii=False)
+    
+    def check_login_state(self):
+        """检查登录状态"""
+        import json
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+        config_file = os.path.join(config_dir, 'login_state.json')
+        
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    state = json.load(f)
+                    return state.get('email')
+            except:
+                pass
+        return None
 
 
 def main():
@@ -2724,6 +3324,16 @@ def main():
             title = f"工作{self.report_type} — {self.date_range}"
             save_report(title, content, self.report_type, self.template_name)
             
+            # 同步报告到服务器
+            try:
+                from api_sync import sync_report_generated, upload_report
+                # 记录报告生成事件
+                sync_report_generated()
+                # 上传报告内容
+                upload_report(title, content, self.report_type)
+            except Exception as e:
+                print(f"[同步] 报告同步失败: {e}")
+            
             # 发送报告生成完成信号
             self.report_generated.emit()
             
@@ -2750,7 +3360,6 @@ def main():
         def onGenerationError(self, error):
             """生成出错"""
             self.is_generating = False
-            self.contentEdit.setPlainText(f"生成失败: {error}")
             
             self.titleLabel.setText(f"{self.report_type}报告生成失败")
             self.statusTag.setText("失败")
@@ -2763,6 +3372,18 @@ def main():
                     background: transparent;
                 }
             """)
+            
+            # 清空内容区域
+            self.contentEdit.setPlainText("")
+            
+            # 显示错误弹窗
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self,
+                "报告生成失败",
+                f"报告生成失败：\n\n{error}\n\n请稍后再试。",
+                QMessageBox.Ok
+            )
         
         def copyContent(self):
             """复制内容"""
@@ -5170,6 +5791,8 @@ def main():
 
     class SettingsPage(QWidget):
         """设置页面"""
+        logout_signal = pyqtSignal()  # 退出登录信号
+        
         def __init__(self, parent=None):
             super().__init__(parent)
             self.setObjectName("settingsPage")
@@ -5192,6 +5815,63 @@ def main():
             title = QLabel("⚙️ 设置")
             title.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
             layout.addWidget(title)
+            
+            # ========== 账号信息 ==========
+            accountCard = QFrame()
+            accountCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
+            accountLayout = QVBoxLayout(accountCard)
+            accountLayout.setContentsMargins(20, 18, 20, 18)
+            accountLayout.setSpacing(12)
+            
+            accountTitle = QLabel("👤 账号信息")
+            accountTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            accountLayout.addWidget(accountTitle)
+            
+            # 邮箱信息
+            emailLayout = QHBoxLayout()
+            emailLabel = QLabel("邮箱:")
+            emailLabel.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
+            emailLayout.addWidget(emailLabel)
+            
+            self.emailValue = QLabel("未登录")
+            self.emailValue.setStyleSheet("font-size: 12px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            emailLayout.addWidget(self.emailValue)
+            emailLayout.addStretch()
+            accountLayout.addLayout(emailLayout)
+            
+            # 分隔线
+            separator = QFrame()
+            separator.setFrameShape(QFrame.HLine)
+            separator.setStyleSheet("background-color: #F0F0F0; border: none; height: 1px;")
+            accountLayout.addWidget(separator)
+            
+            # 退出登录按钮
+            logoutBtn = QPushButton("🚪 退出登录")
+            logoutBtn.setCursor(Qt.PointingHandCursor)
+            logoutBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #F44336;
+                    color: white;
+                    padding: 10px 20px;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #E53935;
+                }
+                QPushButton:pressed {
+                    background-color: #C62828;
+                }
+            """)
+            logoutBtn.clicked.connect(self.onLogout)
+            accountLayout.addWidget(logoutBtn)
+            
+            layout.addWidget(accountCard)
+            
+            # 更新账号信息
+            self.updateAccountInfo()
             
             # ========== 显示缩放设置 ==========
             scaleCard = QFrame()
@@ -5437,7 +6117,7 @@ def main():
             aboutLayout.addWidget(aboutTitle)
             
             aboutText = QLabel(
-                "工作日报助手 v0.21\n"
+                "工作日报助手 v0.25\n"
                 "自动截图分析工作内容，生成工作日报。"
             )
             aboutText.setWordWrap(True)
@@ -5578,6 +6258,44 @@ def main():
             else:
                 self.testStatusLabel.setText("⏸️ 未启用")
                 self.testStatusLabel.setStyleSheet("color: #999999; font-size: 11px; border: none; background: transparent;")
+        
+        def updateAccountInfo(self):
+            """更新账号信息"""
+            import json
+            config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+            config_file = os.path.join(config_dir, 'login_state.json')
+            
+            if os.path.exists(config_file):
+                try:
+                    with open(config_file, 'r', encoding='utf-8') as f:
+                        state = json.load(f)
+                        email = state.get('email', '未登录')
+                        self.emailValue.setText(email)
+                except:
+                    self.emailValue.setText("未登录")
+            else:
+                self.emailValue.setText("未登录")
+        
+        def onLogout(self):
+            """退出登录"""
+            reply = QMessageBox.question(
+                self, "确认退出",
+                "确定要退出登录吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                # 删除登录状态文件
+                import json
+                config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+                config_file = os.path.join(config_dir, 'login_state.json')
+                
+                if os.path.exists(config_file):
+                    os.remove(config_file)
+                
+                # 发送退出登录信号
+                self.logout_signal.emit()
         
         def onScaleChanged(self, text):
             global SCALE_FACTOR
@@ -5874,7 +6592,7 @@ def main():
             """)
             
             # 更新日志
-            self.logText.setText(f"[{self.datetime.now().strftime('%H:%M:%S')}] 监控已启动，间隔 {self.selected_interval} 分钟\n等待第一个间隔结束后开始首次分析...")
+            self.logText.setText(f"[{self.get_now().strftime('%H:%M:%S')}] 监控已启动，间隔 {self.selected_interval} 分钟\n等待第一个间隔结束后开始首次分析...")
             
             # 启动定时监控
             start_monitor(
@@ -5922,7 +6640,7 @@ def main():
             
             # 更新日志
             current_text = self.logText.text()
-            self.logText.setText(current_text + f"\n[{self.datetime.now().strftime('%H:%M:%S')}] 监控已停止")
+            self.logText.setText(current_text + f"\n[{self.get_now().strftime('%H:%M:%S')}] 监控已停止")
             
             InfoBar.info(
                 title="监控已停止",
@@ -5939,7 +6657,7 @@ def main():
             if error:
                 # 分析失败
                 current_text = self.logText.text()
-                self.logText.setText(current_text + f"\n[{self.datetime.now().strftime('%H:%M:%S')}] ❌ 分析失败: {str(error)}")
+                self.logText.setText(current_text + f"\n[{self.get_now().strftime('%H:%M:%S')}] ❌ 分析失败: {str(error)}")
             elif result:
                 # 分析成功
                 work_type = result.get('type', '未知')
@@ -5947,7 +6665,7 @@ def main():
                 current_text = self.logText.text()
                 # 截断描述，避免日志过长
                 short_desc = description[:50] + "..." if len(description) > 50 else description
-                self.logText.setText(current_text + f"\n[{self.datetime.now().strftime('%H:%M:%S')}] ✅ [{work_type}] {short_desc}")
+                self.logText.setText(current_text + f"\n[{self.get_now().strftime('%H:%M:%S')}] ✅ [{work_type}] {short_desc}")
                 
                 # 更新其他页面数据
                 self.main_window.todayPage.updateData()
@@ -5982,6 +6700,9 @@ def main():
             
             # 连接报告生成完成信号到历史报告页面刷新
             self.reportPage.report_generated.connect(self.historyReportPage.refreshList)
+            
+            # 连接退出登录信号
+            self.settingsPage.logout_signal.connect(self.onLogout)
             
             # 添加导航项
             self.addSubInterface(self.todayPage, FluentIcon.HOME, "今日工作")
@@ -6027,6 +6748,19 @@ def main():
                 page = self._page_map[page_name]
                 # 使用 FluentWindow 的切换页面方法
                 self.stackedWidget.setCurrentWidget(page)
+        
+        def onLogout(self):
+            """退出登录"""
+            self.hide()  # 隐藏主窗口
+            # 显示登录窗口
+            self.login_window = LoginWindow()
+            self.login_window.login_success.connect(self.onLoginSuccess)
+            self.login_window.show()
+        
+        def onLoginSuccess(self):
+            """重新登录成功"""
+            self.show()
+            self.settingsPage.updateAccountInfo()
         
         def setupSystemTray(self):
             """设置系统托盘图标和菜单"""
@@ -6263,8 +6997,20 @@ def main():
     # 设置应用程序在关闭最后一个窗口时不退出（用于最小化到托盘）
     app.setQuitOnLastWindowClosed(False)
     
+    # 创建主窗口
     window = MainWindow()
-    window.show()
+    
+    # 显示登录窗口
+    login_window = LoginWindow()
+    
+    def on_login_success():
+        """登录成功后显示主窗口"""
+        login_window.close()
+        window.show()
+    
+    login_window.login_success.connect(on_login_success)
+    login_window.show()
+    
     sys.exit(app.exec_())
 
 

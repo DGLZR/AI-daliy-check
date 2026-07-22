@@ -6,47 +6,86 @@ import base64
 import csv
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import time
 import store
+
+
+# ==================== 时区工具 ====================
+
+# 东八区时区
+CST = timezone(timedelta(hours=8))
+
+
+def get_now():
+    """获取东八区当前时间"""
+    return datetime.now(CST)
+
+
+def get_today():
+    """获取东八区今天的日期字符串"""
+    return get_now().strftime('%Y-%m-%d')
+
+
+def get_current_time():
+    """获取东八区当前时间字符串"""
+    return get_now().strftime('%H:%M:%S')
 
 # ==================== 重试配置 ====================
 
 MAX_RETRIES = 5  # 最大重试次数
 RETRY_DELAY = 1  # 重试间隔（秒）
-OVERLOAD_KEYWORD = "该模型当前访问量过大"  # 过载关键词
+
+# 需要重试的错误关键词列表
+RETRY_KEYWORDS = [
+    "该模型当前访问量过大",
+    "速率限制",
+    "rate limit",
+    "Rate limit",
+    "RATE_LIMIT",
+    "Too Many Requests",
+    "too many requests",
+    "429",
+    "请求频率",
+    "服务器繁忙",
+    "服务繁忙",
+    "稍后尝试",
+    "请稍后再试"
+]
 
 
-def is_overload_error(error_msg):
-    """检查是否是过载错误"""
-    return OVERLOAD_KEYWORD in str(error_msg)
+def is_retryable_error(error_msg):
+    """检查是否是需要重试的错误"""
+    error_str = str(error_msg).lower()
+    return any(keyword.lower() in error_str for keyword in RETRY_KEYWORDS)
 
 
 def retry_on_overload(func):
-    """重试装饰器，当遇到过载错误时自动重试"""
+    """重试装饰器，当遇到可重试错误时自动重试"""
     def wrapper(*args, **kwargs):
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
                 result = func(*args, **kwargs)
-                # 检查返回结果是否包含过载信息
+                # 检查返回结果是否包含可重试错误信息
                 if isinstance(result, dict):
                     desc = result.get('description', '')
-                    if is_overload_error(desc):
+                    if is_retryable_error(desc):
                         raise Exception(desc)
                 return result
             except Exception as e:
                 last_error = e
                 error_msg = str(e)
-                if is_overload_error(error_msg):
+                if is_retryable_error(error_msg):
                     if attempt < MAX_RETRIES - 1:
-                        print(f"[重试] 模型访问量过大，{RETRY_DELAY}秒后重试... (第{attempt + 1}/{MAX_RETRIES}次)")
+                        print(f"[重试] 遇到限流/过载错误，{RETRY_DELAY}秒后重试... (第{attempt + 1}/{MAX_RETRIES}次)")
+                        print(f"[重试] 错误信息: {error_msg[:100]}")
                         time.sleep(RETRY_DELAY)
                     else:
                         print(f"[失败] 已重试{MAX_RETRIES}次，仍无法访问模型")
-                        raise Exception(f"模型访问量过大，已重试{MAX_RETRIES}次仍无法访问，请稍后再试")
+                        raise Exception(f"已重试{MAX_RETRIES}次仍失败: {error_msg[:100]}")
                 else:
-                    # 非过载错误，直接抛出
+                    # 非可重试错误，直接抛出
                     raise
         raise last_error
     return wrapper
@@ -104,7 +143,7 @@ def save_screenshot(img, record_id):
     os.makedirs(photo_dir, exist_ok=True)
     
     # 生成文件名: ID_日期_时间.png
-    now = datetime.now()
+    now = get_now()
     filename = f"{record_id}_{now.strftime('%Y%m%d')}_{now.strftime('%H%M%S')}.png"
     filepath = os.path.join(photo_dir, filename)
     
@@ -535,7 +574,7 @@ def run_and_store():
     init_db()
     
     # 获取当前系统时间
-    now = datetime.now()
+    now = get_now()
     today = now.strftime('%Y-%m-%d')      # 格式：2025-01-15
     current_time = now.strftime('%H:%M:%S')  # 格式：09:30:00
     
@@ -627,6 +666,16 @@ def run_and_store():
     write_summary(summaries)
     write_records(records)
     
+    # 同步数据到服务器
+    try:
+        from api_sync import sync_work_record, sync_daily_summary
+        # 同步工作记录
+        sync_work_record(today, current_time, work_type, description, 0)
+        # 同步每日汇总
+        sync_daily_summary(summaries[today])
+    except Exception as e:
+        print(f"[同步] 数据同步失败: {e}")
+    
     # 打印记录信息
     print(f"已记录: [{work_type}] {description}")
     
@@ -653,7 +702,7 @@ def run_and_store_with_interval(interval_minutes):
     init_db()
     
     # 获取当前系统时间
-    now = datetime.now()
+    now = get_now()
     today = now.strftime('%Y-%m-%d')      # 格式：2025-01-15
     current_time = now.strftime('%H:%M:%S')  # 格式：09:30:00
     
@@ -732,6 +781,16 @@ def run_and_store_with_interval(interval_minutes):
     write_summary(summaries)
     write_records(records)
     
+    # 同步数据到服务器
+    try:
+        from api_sync import sync_work_record, sync_daily_summary
+        # 同步工作记录
+        sync_work_record(today, current_time, work_type, description, duration_minutes)
+        # 同步每日汇总
+        sync_daily_summary(summaries[today])
+    except Exception as e:
+        print(f"[同步] 数据同步失败: {e}")
+    
     # 打印记录信息
     print(f"[定时监控] 已记录: [{work_type}] {description} (间隔: {interval_minutes}分钟)")
     
@@ -755,7 +814,7 @@ def get_today_stats():
     """
     from store import read_summary, WORK_TYPES
     
-    now = datetime.now()
+    now = get_now()
     today = now.strftime('%Y-%m-%d')
     
     summaries = read_summary()
@@ -1190,15 +1249,18 @@ def _generate_with_glm_stream(prompt, callback=None):
     
     返回:
         生成的报告内容
+    
+    异常:
+        如果重试次数用完仍失败，抛出异常
     """
     from zhipuai import ZhipuAI as ZhipuAiClient
     
     client = ZhipuAiClient(api_key=GLM_API_KEY)
     
-    full_response = ""
     last_error = None
     
     for attempt in range(MAX_RETRIES):
+        full_response = ""
         try:
             response = client.chat.completions.create(
                 model=GLM_ONLYWORD_MODEL,
@@ -1221,34 +1283,19 @@ def _generate_with_glm_stream(prompt, callback=None):
         except Exception as e:
             last_error = e
             error_msg = str(e)
-            if is_overload_error(error_msg):
+            if is_retryable_error(error_msg):
                 if attempt < MAX_RETRIES - 1:
-                    retry_msg = f"\n\n[重试] 模型访问量过大，{RETRY_DELAY}秒后重试... (第{attempt + 1}/{MAX_RETRIES}次)"
-                    full_response += retry_msg
-                    if callback:
-                        callback(retry_msg, False)
+                    # 只在控制台打印，不写入报告
+                    print(f"[重试] 遇到限流/过载，{RETRY_DELAY}秒后重试... (第{attempt + 1}/{MAX_RETRIES}次)")
                     time.sleep(RETRY_DELAY)
                 else:
-                    final_msg = f"\n\n[失败] 已重试{MAX_RETRIES}次，模型仍无法访问，请稍后再试"
-                    full_response += final_msg
-                    if callback:
-                        callback(final_msg, True)
-                    return full_response
+                    # 重试次数用完，抛出异常
+                    raise Exception(f"已重试{MAX_RETRIES}次仍无法访问AI模型，请稍后再试")
             else:
-                # 非过载错误
-                error_msg = f"\n\n[生成失败: {error_msg}]"
-                full_response += error_msg
-                if callback:
-                    callback(error_msg, True)
-                return full_response
+                # 非可重试错误，直接抛出
+                raise
     
-    # 不应该到达这里，但以防万一
-    if last_error:
-        error_msg = f"\n\n[生成失败: {str(last_error)}]"
-        full_response += error_msg
-        if callback:
-            callback(error_msg, True)
-    return full_response
+    raise last_error
 
 
 def _generate_with_ollama_stream(prompt, callback=None):
@@ -1261,16 +1308,19 @@ def _generate_with_ollama_stream(prompt, callback=None):
     
     返回:
         生成的报告内容
+    
+    异常:
+        如果重试次数用完仍失败，抛出异常
     """
     host = _custom_ollama_host or 'http://192.168.31.23:11434'
     model = _custom_ollama_model or 'minicpm-v4.6'
     
     client = ollama.Client(host=host)
     
-    full_response = ""
     last_error = None
     
     for attempt in range(MAX_RETRIES):
+        full_response = ""
         try:
             response = client.chat(
                 model=model,
@@ -1294,31 +1344,16 @@ def _generate_with_ollama_stream(prompt, callback=None):
         except Exception as e:
             last_error = e
             error_msg = str(e)
-            if is_overload_error(error_msg):
+            if is_retryable_error(error_msg):
                 if attempt < MAX_RETRIES - 1:
-                    retry_msg = f"\n\n[重试] 模型访问量过大，{RETRY_DELAY}秒后重试... (第{attempt + 1}/{MAX_RETRIES}次)"
-                    full_response += retry_msg
-                    if callback:
-                        callback(retry_msg, False)
+                    # 只在控制台打印，不写入报告
+                    print(f"[重试] 遇到限流/过载，{RETRY_DELAY}秒后重试... (第{attempt + 1}/{MAX_RETRIES}次)")
                     time.sleep(RETRY_DELAY)
                 else:
-                    final_msg = f"\n\n[失败] 已重试{MAX_RETRIES}次，模型仍无法访问，请稍后再试"
-                    full_response += final_msg
-                    if callback:
-                        callback(final_msg, True)
-                    return full_response
+                    # 重试次数用完，抛出异常
+                    raise Exception(f"已重试{MAX_RETRIES}次仍无法访问AI模型，请稍后再试")
             else:
-                # 非过载错误
-                error_msg = f"\n\n[生成失败: {error_msg}]"
-                full_response += error_msg
-                if callback:
-                    callback(error_msg, True)
-                return full_response
+                # 非可重试错误，直接抛出
+                raise
     
-    # 不应该到达这里，但以防万一
-    if last_error:
-        error_msg = f"\n\n[生成失败: {str(last_error)}]"
-        full_response += error_msg
-        if callback:
-            callback(error_msg, True)
-    return full_response
+    raise last_error

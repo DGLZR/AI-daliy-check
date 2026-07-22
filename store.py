@@ -14,8 +14,29 @@
 
 import csv
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import time
+
+# ==================== 时区工具 ====================
+
+# 东八区时区
+CST = timezone(timedelta(hours=8))
+
+
+def get_now():
+    """获取东八区当前时间"""
+    return datetime.now(CST)
+
+
+def get_today():
+    """获取东八区今天的日期字符串"""
+    return get_now().strftime('%Y-%m-%d')
+
+
+def get_current_time():
+    """获取东八区当前时间字符串"""
+    return get_now().strftime('%H:%M:%S')
+
 
 # ==================== 配置常量 ====================
 
@@ -223,7 +244,7 @@ def get_daily_summary(date=None):
     """
     # 默认查询今天
     if date is None:
-        date = datetime.now().strftime('%Y-%m-%d')
+        date = get_now().strftime('%Y-%m-%d')
     
     # 读取所有汇总数据
     summaries = read_summary()
@@ -244,7 +265,7 @@ def get_daily_records(date=None):
     """
     # 默认查询今天
     if date is None:
-        date = datetime.now().strftime('%Y-%m-%d')
+        date = get_now().strftime('%Y-%m-%d')
     
     # 读取所有记录
     records = read_records()
@@ -327,7 +348,7 @@ def print_daily_summary(date=None):
     """
     # 默认查询今天
     if date is None:
-        date = datetime.now().strftime('%Y-%m-%d')
+        date = get_now().strftime('%Y-%m-%d')
     
     # 打印汇总标题
     print("\n" + "="*50)
@@ -608,7 +629,7 @@ def save_report(title, content, report_type="日报", template_name="默认"):
     init_report_dir()
     
     # 生成文件名：日期_时间_类型.md
-    now = datetime.now()
+    now = get_now()
     filename = f"{now.strftime('%Y%m%d_%H%M%S')}_{report_type}.md"
     filepath = os.path.join(REPORT_DIR, filename)
     
@@ -676,7 +697,7 @@ def get_report_list():
                 if generate_time:
                     try:
                         dt = datetime.strptime(generate_time, '%Y-%m-%d %H:%M:%S')
-                        today = datetime.now().strftime('%Y-%m-%d')
+                        today = get_now().strftime('%Y-%m-%d')
                         if dt.strftime('%Y-%m-%d') == today:
                             generate_time = f"今日 {dt.strftime('%H:%M')}"
                         else:
