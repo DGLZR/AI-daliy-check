@@ -86,6 +86,7 @@ class LoginWindow(QWidget):
         super().__init__(parent)
         self.is_login_mode = True  # True=登录模式, False=注册模式
         self.is_forgot_mode = False  # True=找回密码模式
+        self._is_logging_in = False  # 是否正在登录（防止closeEvent误触发）
         self.setup_ui()
         self._load_remember_account()
     
@@ -721,6 +722,7 @@ class LoginWindow(QWidget):
                     self.save_login_state(email, password)
                     # 记住账号密码到 secret.json
                     self._save_remember_account(email, password)
+                    self._is_logging_in = True  # 标记正在登录，防止closeEvent退出程序
                     self.login_success.emit()
                     self.close()
                 else:
@@ -824,6 +826,12 @@ class LoginWindow(QWidget):
                 )
                 self.submitBtn.setEnabled(True)
                 self.submitBtn.setText("注册")
+    
+    def closeEvent(self, event):
+        """关闭窗口时终止程序（仅在用户手动关闭时）"""
+        if not self._is_logging_in:
+            QApplication.quit()
+        event.accept()
     
     def save_login_state(self, email, password=None):
         """保存登录状态"""
