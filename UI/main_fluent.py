@@ -85,6 +85,7 @@ class LoginWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.is_login_mode = True  # True=登录模式, False=注册模式
+        self.is_forgot_mode = False  # True=找回密码模式
         self.setup_ui()
     
     def setup_ui(self):
@@ -192,7 +193,7 @@ class LoginWindow(QWidget):
         self.modeSubtitle = QLabel("请输入您的账号信息")
         self.modeSubtitle.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
         mainLayout.addWidget(self.modeSubtitle)
-        mainLayout.addSpacing(24)
+        mainLayout.addSpacing(16)
         
         # ========== 邮箱输入框 ==========
         emailLabel = QLabel("邮箱")
@@ -252,9 +253,9 @@ class LoginWindow(QWidget):
         mainLayout.addSpacing(16)
         
         # ========== 密码输入框 ==========
-        passwordLabel = QLabel("密码")
-        passwordLabel.setStyleSheet("font-size: 12px; font-weight: bold; color: #374151; border: none; background: transparent;")
-        mainLayout.addWidget(passwordLabel)
+        self.passwordLabel = QLabel("密码")
+        self.passwordLabel.setStyleSheet("font-size: 12px; font-weight: bold; color: #374151; border: none; background: transparent;")
+        mainLayout.addWidget(self.passwordLabel)
         mainLayout.addSpacing(6)
         
         self.passwordInput = QLineEdit()
@@ -328,7 +329,30 @@ class LoginWindow(QWidget):
         self.submitBtn.clicked.connect(self.on_submit)
         mainLayout.addWidget(self.submitBtn)
         
-        mainLayout.addStretch()
+        # ========== 忘记密码链接 ==========
+        forgotLayout = QHBoxLayout()
+        forgotLayout.addStretch()
+        
+        forgotBtn = QPushButton("忘记密码？")
+        forgotBtn.setCursor(Qt.PointingHandCursor)
+        forgotBtn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #16A34A;
+                font-size: 12px;
+                border: none;
+                padding: 4px 0;
+            }
+            QPushButton:hover {
+                color: #15803D;
+            }
+        """)
+        forgotBtn.clicked.connect(self.toggle_forgot_mode)
+        forgotLayout.addWidget(forgotBtn)
+        forgotLayout.addStretch()
+        
+        mainLayout.addLayout(forgotLayout)
+        mainLayout.addSpacing(10)
         
         # ========== 底部提示 ==========
         bottomLayout = QHBoxLayout()
@@ -378,29 +402,83 @@ class LoginWindow(QWidget):
         mainLayout.addLayout(bottomLayout)
     
     def toggle_mode(self):
-        """切换登录/注册模式"""
-        self.is_login_mode = not self.is_login_mode
+        """切换登录/注册/找回密码模式"""
+        if self.is_forgot_mode:
+            # 从找回密码返回登录
+            self.is_forgot_mode = False
+            self.is_login_mode = True
+        elif self.is_login_mode:
+            # 从登录切换到注册
+            self.is_login_mode = False
+        else:
+            # 从注册切换到登录
+            self.is_login_mode = True
         
-        if self.is_login_mode:
-            # 切换到登录模式
+        # 更新UI
+        if self.is_forgot_mode:
+            self.toggle_forgot_mode()
+        elif self.is_login_mode:
             self.modeTitle.setText("登录")
             self.switchBtn.setText("注册")
+            self.switchBtn.setVisible(True)
             self.modeSubtitle.setText("请输入您的账号信息")
             self.submitBtn.setText("登录")
             self.sendCodeBtn.setVisible(False)
             self.codeLabel.setVisible(False)
             self.codeInput.setVisible(False)
+            self.passwordInput.setVisible(True)
+            self.passwordLabel.setVisible(True)
+            self.passwordLabel.setText("密码")
             self.passwordInput.setPlaceholderText("请输入密码")
+            self.passwordInput.setEchoMode(QLineEdit.Password)
         else:
-            # 切换到注册模式
+            # 注册模式
             self.modeTitle.setText("注册")
             self.switchBtn.setText("登录")
+            self.switchBtn.setVisible(True)
             self.modeSubtitle.setText("创建新账号开始使用")
             self.submitBtn.setText("注册")
             self.sendCodeBtn.setVisible(True)
             self.codeLabel.setVisible(True)
             self.codeInput.setVisible(True)
+            self.passwordInput.setVisible(True)
+            self.passwordLabel.setVisible(True)
+            self.passwordLabel.setText("密码")
             self.passwordInput.setPlaceholderText("设置密码（至少6位）")
+            self.passwordInput.setEchoMode(QLineEdit.Password)
+        
+        # 清空输入框
+        self.emailInput.clear()
+        self.passwordInput.clear()
+        self.codeInput.clear()
+    
+    def toggle_forgot_mode(self):
+        """切换到找回密码模式"""
+        self.is_forgot_mode = True
+        self.is_login_mode = False
+        
+        self.modeTitle.setText("找回密码")
+        self.switchBtn.setText("返回登录")
+        self.switchBtn.setVisible(True)
+        self.modeSubtitle.setText("通过验证码重置您的密码")
+        self.submitBtn.setText("重置密码")
+        
+        # 显示验证码输入框和发送按钮
+        self.sendCodeBtn.setVisible(True)
+        self.codeLabel.setVisible(True)
+        self.codeInput.setVisible(True)
+        
+        # 修改密码输入框为新密码
+        self.passwordLabel.setText("新密码")
+        self.passwordInput.setPlaceholderText("设置新密码（至少6位）")
+        self.passwordInput.setVisible(True)
+        self.passwordLabel.setVisible(True)
+        self.passwordInput.setEchoMode(QLineEdit.Password)
+        
+        # 清空输入框
+        self.emailInput.clear()
+        self.passwordInput.clear()
+        self.codeInput.clear()
     
     def send_verification_code(self):
         """发送验证码"""
@@ -477,17 +555,17 @@ class LoginWindow(QWidget):
             self.sendCodeBtn.setText("发送验证码")
     
     def on_submit(self):
-        """提交登录/注册"""
+        """提交登录/注册/找回密码"""
         import requests
         
         email = self.emailInput.text().strip()
         password = self.passwordInput.text().strip()
         
-        if not email or not password:
+        if not email:
             from qfluentwidgets import InfoBar, InfoBarPosition
             InfoBar.warning(
                 title="提示",
-                content="请填写完整信息",
+                content="请输入邮箱地址",
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -496,8 +574,98 @@ class LoginWindow(QWidget):
             )
             return
         
-        if self.is_login_mode:
+        if self.is_forgot_mode:
+            # 找回密码逻辑
+            code = self.codeInput.text().strip()
+            if not password:
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                InfoBar.warning(
+                    title="提示",
+                    content="请输入新密码",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+            if not code:
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                InfoBar.warning(
+                    title="提示",
+                    content="请输入验证码",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+            
+            self.submitBtn.setEnabled(False)
+            self.submitBtn.setText("重置中...")
+            
+            try:
+                response = requests.post(
+                    f"{API_BASE_URL}/api/reset-password",
+                    json={"email": email, "code": code, "new_password": password},
+                    timeout=10
+                )
+                result = response.json()
+                
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                if result.get('success'):
+                    InfoBar.success(
+                        title="重置成功",
+                        content=result.get('message', '密码已重置，请重新登录'),
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+                    self.toggle_mode()  # 返回登录模式
+                else:
+                    InfoBar.error(
+                        title="重置失败",
+                        content=result.get('message', '重置失败'),
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+                self.submitBtn.setEnabled(True)
+                self.submitBtn.setText("重置密码")
+            except Exception as e:
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                InfoBar.error(
+                    title="连接失败",
+                    content=f"无法连接到服务器: {str(e)}",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                self.submitBtn.setEnabled(True)
+                self.submitBtn.setText("重置密码")
+        
+        elif self.is_login_mode:
             # 登录逻辑
+            if not password:
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                InfoBar.warning(
+                    title="提示",
+                    content="请输入密码",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+            
             self.submitBtn.setEnabled(False)
             self.submitBtn.setText("登录中...")
             
@@ -552,6 +720,18 @@ class LoginWindow(QWidget):
         else:
             # 注册逻辑
             code = self.codeInput.text().strip()
+            if not password:
+                from qfluentwidgets import InfoBar, InfoBarPosition
+                InfoBar.warning(
+                    title="提示",
+                    content="请输入密码",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
             if not code:
                 from qfluentwidgets import InfoBar, InfoBarPosition
                 InfoBar.warning(
