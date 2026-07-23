@@ -23,3 +23,6 @@ darkdetect>=0.8.0
 # GLM API (可选，用于GLM通用模型)
 # 安装命令: pip install zai
 # 或者: pip install zhipuai
+
+# 加密工具
+cryptography>=41.0.0

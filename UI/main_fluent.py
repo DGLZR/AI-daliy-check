@@ -14,7 +14,7 @@ import sys; sys.setrecursionlimit(sys.getrecursionlimit() * 5)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 顶部导入 PyQt5 组件（供 LoginWindow 使用）
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QApplication
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QApplication, QCheckBox
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QPixmap, QPainter, QPainterPath
 from datetime import datetime, timedelta, timezone
@@ -87,6 +87,7 @@ class LoginWindow(QWidget):
         self.is_login_mode = True  # True=登录模式, False=注册模式
         self.is_forgot_mode = False  # True=找回密码模式
         self.setup_ui()
+        self._load_remember_account()
     
     def setup_ui(self):
         """设置界面"""
@@ -276,6 +277,31 @@ class LoginWindow(QWidget):
             }
         """)
         mainLayout.addWidget(self.passwordInput)
+        mainLayout.addSpacing(8)
+        
+        # ========== 记住账号密码（登录模式显示）==========
+        self.rememberCheckBox = QCheckBox("记住账号密码")
+        self.rememberCheckBox.setStyleSheet("""
+            QCheckBox {
+                font-size: 12px;
+                color: #6B7280;
+                border: none;
+                background: transparent;
+                spacing: 6px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 2px solid #D1D5DB;
+                border-radius: 3px;
+                background: white;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #16A34A;
+                border-color: #16A34A;
+            }
+        """)
+        mainLayout.addWidget(self.rememberCheckBox)
         mainLayout.addSpacing(16)
         
         # ========== 验证码输入框（注册模式显示）==========
@@ -431,6 +457,7 @@ class LoginWindow(QWidget):
             self.passwordLabel.setText("密码")
             self.passwordInput.setPlaceholderText("请输入密码")
             self.passwordInput.setEchoMode(QLineEdit.Password)
+            self.rememberCheckBox.setVisible(True)
         else:
             # 注册模式
             self.modeTitle.setText("注册")
@@ -446,6 +473,7 @@ class LoginWindow(QWidget):
             self.passwordLabel.setText("密码")
             self.passwordInput.setPlaceholderText("设置密码（至少6位）")
             self.passwordInput.setEchoMode(QLineEdit.Password)
+            self.rememberCheckBox.setVisible(False)
         
         # 清空输入框
         self.emailInput.clear()
@@ -474,6 +502,7 @@ class LoginWindow(QWidget):
         self.passwordInput.setVisible(True)
         self.passwordLabel.setVisible(True)
         self.passwordInput.setEchoMode(QLineEdit.Password)
+        self.rememberCheckBox.setVisible(False)
         
         # 清空输入框
         self.emailInput.clear()
@@ -690,6 +719,8 @@ class LoginWindow(QWidget):
                     )
                     # 保存登录状态（包含密码用于数据同步）
                     self.save_login_state(email, password)
+                    # 记住账号密码到 secret.json
+                    self._save_remember_account(email, password)
                     self.login_success.emit()
                     self.close()
                 else:
@@ -826,6 +857,51 @@ class LoginWindow(QWidget):
             except:
                 pass
         return None
+    
+    def _save_remember_account(self, email, password):
+        """将记住的账号密码加密保存到 secret.json，取消勾选时删除记录"""
+        import json
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+        secret_file = os.path.join(config_dir, 'secret.json')
+        
+        if not self.rememberCheckBox.isChecked():
+            # 取消勾选，删除已保存的记录
+            if os.path.exists(secret_file):
+                os.remove(secret_file)
+            return
+        
+        try:
+            from crypto_utils import encrypt_text
+            os.makedirs(config_dir, exist_ok=True)
+            
+            data = {
+                'email': encrypt_text(email),
+                'password': encrypt_text(password)
+            }
+            with open(secret_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False)
+        except Exception as e:
+            print(f"保存记住账号失败: {e}")
+    
+    def _load_remember_account(self):
+        """从 secret.json 加载已记住的账号密码并填充到输入框"""
+        try:
+            import json
+            from crypto_utils import decrypt_text
+            config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+            secret_file = os.path.join(config_dir, 'secret.json')
+            
+            if os.path.exists(secret_file):
+                with open(secret_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                email = decrypt_text(data.get('email', ''))
+                password = decrypt_text(data.get('password', ''))
+                if email and password:
+                    self.emailInput.setText(email)
+                    self.passwordInput.setText(password)
+                    self.rememberCheckBox.setChecked(True)
+        except Exception as e:
+            print(f"加载记住账号失败: {e}")
 
 
 def main():
@@ -6120,7 +6196,7 @@ def main():
             glmLayout.setContentsMargins(0, 5, 0, 0)
             glmLayout.setSpacing(8)
             
-            glmInfo = QLabel("使用 GLM-4.6V-Flash 通用模型（无需本地部署）")
+            glmInfo = QLabel("使用 GLM 通用模型（无需本地部署）")
             glmInfo.setStyleSheet("color: #666666; font-size: 11px; border: none; background: transparent;")
             glmLayout.addWidget(glmInfo)
             
