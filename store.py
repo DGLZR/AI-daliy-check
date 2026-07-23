@@ -762,3 +762,80 @@ def delete_report(filepath):
     except Exception as e:
         print(f"删除报告失败: {e}")
         return False
+
+
+# ==================== 设置管理 ====================
+
+# 设置文件路径
+SETTINGS_FILE = os.path.join(DB_DIR, 'settings.csv')
+
+# 默认设置
+DEFAULT_SETTINGS = {
+    'auto_check_update': 'true'
+}
+
+
+def init_settings():
+    """初始化设置文件"""
+    if not os.path.exists(SETTINGS_FILE):
+        os.makedirs(DB_DIR, exist_ok=True)
+        with open(SETTINGS_FILE, 'w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f)
+            writer.writerow(['key', 'value'])
+            for key, value in DEFAULT_SETTINGS.items():
+                writer.writerow([key, value])
+        print(f"已创建设置文件: {SETTINGS_FILE}")
+
+
+def read_settings():
+    """
+    读取设置
+    
+    返回值：
+        字典，包含所有设置项
+    """
+    init_settings()
+    settings = DEFAULT_SETTINGS.copy()
+    
+    try:
+        with open(SETTINGS_FILE, 'r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                settings[row['key']] = row['value']
+    except Exception as e:
+        print(f"读取设置失败: {e}")
+    
+    return settings
+
+
+def write_setting(key, value):
+    """
+    写入单个设置
+    
+    参数：
+        key: 设置键名
+        value: 设置值
+    """
+    settings = read_settings()
+    settings[key] = str(value).lower() if isinstance(value, bool) else str(value)
+    
+    with open(SETTINGS_FILE, 'w', newline='', encoding='utf-8-sig') as f:
+        writer = csv.writer(f)
+        writer.writerow(['key', 'value'])
+        for k, v in settings.items():
+            writer.writerow([k, v])
+
+
+def get_setting(key, default=None):
+    """
+    获取单个设置值
+    
+    参数：
+        key: 设置键名
+        default: 默认值
+    
+    返回值：
+        设置值
+    """
+    settings = read_settings()
+    return settings.get(key, default)

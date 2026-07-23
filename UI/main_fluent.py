@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 顶部导入 PyQt5 组件（供 LoginWindow 使用）
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QApplication, QCheckBox
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QTimer
 from PyQt5.QtGui import QPixmap, QPainter, QPainterPath
 from datetime import datetime, timedelta, timezone
 
@@ -6053,6 +6053,247 @@ def main():
                     parent=self
                 )
 
+    class LatestVersionDialog(QDialog):
+        """最新版本弹窗"""
+        def __init__(self, current_version, update_log, parent=None):
+            super().__init__(parent)
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+            self.setAttribute(Qt.WA_TranslucentBackground)
+            self.setModal(True)
+            
+            mainLayout = QHBoxLayout(self)
+            mainLayout.setContentsMargins(0, 0, 0, 0)
+            
+            overlay = QWidget()
+            overlay.setStyleSheet("background-color: rgba(0, 0, 0, 100);")
+            overlayLayout = QVBoxLayout(overlay)
+            overlayLayout.setAlignment(Qt.AlignCenter)
+            
+            card = QFrame()
+            card.setFixedSize(400, 350)
+            card.setStyleSheet("QFrame { background-color: white; border-radius: 16px; border: 1px solid #ECECEC; }")
+            cardLayout = QVBoxLayout(card)
+            cardLayout.setContentsMargins(24, 24, 24, 24)
+            cardLayout.setSpacing(16)
+            
+            # 图标
+            iconLabel = QLabel("✅")
+            iconLabel.setFixedSize(48, 48)
+            iconLabel.setAlignment(Qt.AlignCenter)
+            iconLabel.setStyleSheet("font-size: 32px; background: transparent; border: none;")
+            cardLayout.addWidget(iconLabel, 0, Qt.AlignCenter)
+            
+            # 标题
+            titleLabel = QLabel("已是最新版本")
+            titleLabel.setStyleSheet("font-size: 18px; font-weight: bold; color: #1a1a1a; border: none; background: transparent;")
+            titleLabel.setAlignment(Qt.AlignCenter)
+            cardLayout.addWidget(titleLabel)
+            
+            # 版本号
+            versionLabel = QLabel(f"当前版本：{current_version}")
+            versionLabel.setStyleSheet("font-size: 14px; color: #16A34A; font-weight: bold; border: none; background: transparent;")
+            versionLabel.setAlignment(Qt.AlignCenter)
+            cardLayout.addWidget(versionLabel)
+            
+            # 更新日志
+            logLabel = QLabel(update_log)
+            logLabel.setWordWrap(True)
+            logLabel.setStyleSheet("font-size: 12px; color: #666666; border: none; background: transparent;")
+            logLabel.setAlignment(Qt.AlignCenter)
+            cardLayout.addWidget(logLabel)
+            
+            cardLayout.addStretch()
+            
+            # 关闭按钮
+            closeBtn = QPushButton("关闭")
+            closeBtn.setFixedHeight(40)
+            closeBtn.setCursor(Qt.PointingHandCursor)
+            closeBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #F44336;
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: bold;
+                }
+                QPushButton:hover { background-color: #E53935; }
+            """)
+            closeBtn.clicked.connect(self.close)
+            cardLayout.addWidget(closeBtn)
+            
+            overlayLayout.addWidget(card)
+            mainLayout.addWidget(overlay)
+
+    class UpdateDialog(QDialog):
+        """更新弹窗"""
+        def __init__(self, current_version, latest_version, update_log, download_url, parent=None):
+            super().__init__(parent)
+            self.download_url = download_url
+            self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+            self.setAttribute(Qt.WA_TranslucentBackground)
+            self.setModal(True)
+            
+            mainLayout = QHBoxLayout(self)
+            mainLayout.setContentsMargins(0, 0, 0, 0)
+            
+            overlay = QWidget()
+            overlay.setStyleSheet("background-color: rgba(0, 0, 0, 100);")
+            overlayLayout = QVBoxLayout(overlay)
+            overlayLayout.setAlignment(Qt.AlignCenter)
+            
+            card = QFrame()
+            card.setFixedSize(450, 400)
+            card.setStyleSheet("QFrame { background-color: white; border-radius: 16px; border: 1px solid #ECECEC; }")
+            cardLayout = QVBoxLayout(card)
+            cardLayout.setContentsMargins(24, 24, 24, 24)
+            cardLayout.setSpacing(16)
+            
+            # 版本号标题
+            versionTitle = QLabel(f"{current_version} → {latest_version}")
+            versionTitle.setStyleSheet("font-size: 20px; font-weight: bold; color: #16A34A; border: none; background: transparent;")
+            versionTitle.setAlignment(Qt.AlignCenter)
+            cardLayout.addWidget(versionTitle)
+            
+            # 发现新版本
+            newVersionLabel = QLabel("发现新版本！")
+            newVersionLabel.setStyleSheet("font-size: 14px; color: #666666; border: none; background: transparent;")
+            newVersionLabel.setAlignment(Qt.AlignCenter)
+            cardLayout.addWidget(newVersionLabel)
+            
+            # 更新日志
+            logTitle = QLabel("更新日志")
+            logTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            cardLayout.addWidget(logTitle)
+            
+            logContent = QLabel(update_log)
+            logContent.setWordWrap(True)
+            logContent.setStyleSheet("""
+                QLabel {
+                    background-color: #F9FAFB;
+                    padding: 12px;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    color: #374151;
+                    border: 1px solid #E5E7EB;
+                }
+            """)
+            logContent.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            cardLayout.addWidget(logContent)
+            
+            cardLayout.addStretch()
+            
+            # 按钮
+            btnLayout = QHBoxLayout()
+            btnLayout.setSpacing(12)
+            
+            closeBtn = QPushButton("关闭")
+            closeBtn.setFixedHeight(40)
+            closeBtn.setCursor(Qt.PointingHandCursor)
+            closeBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #F44336;
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: bold;
+                }
+                QPushButton:hover { background-color: #E53935; }
+            """)
+            closeBtn.clicked.connect(self.close)
+            btnLayout.addWidget(closeBtn)
+            
+            updateBtn = QPushButton("更新")
+            updateBtn.setFixedHeight(40)
+            updateBtn.setCursor(Qt.PointingHandCursor)
+            updateBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #16A34A;
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: bold;
+                }
+                QPushButton:hover { background-color: #15803D; }
+            """)
+            updateBtn.clicked.connect(self.startUpdate)
+            btnLayout.addWidget(updateBtn)
+            
+            cardLayout.addLayout(btnLayout)
+            
+            overlayLayout.addWidget(card)
+            mainLayout.addWidget(overlay)
+        
+        def startUpdate(self):
+            """开始更新"""
+            import requests
+            from PyQt5.QtWidgets import QFileDialog
+            
+            if not self.download_url:
+                InfoBar.error(
+                    title="下载失败",
+                    content="没有可用的下载链接",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                return
+            
+            # 选择保存位置
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "保存更新文件",
+                "WorkDiary_Update.exe",
+                "Executable Files (*.exe);;All Files (*)"
+            )
+            
+            if not file_path:
+                return
+            
+            try:
+                InfoBar.info(
+                    title="下载中",
+                    content="正在下载更新文件...",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                
+                # 下载文件
+                full_url = f"{API_BASE_URL}{self.download_url}"
+                response = requests.get(full_url, timeout=300)
+                
+                with open(file_path, 'wb') as f:
+                    f.write(response.content)
+                
+                InfoBar.success(
+                    title="下载完成",
+                    content=f"更新文件已保存到: {file_path}",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=5000,
+                    parent=self
+                )
+                
+                self.close()
+                
+            except Exception as e:
+                InfoBar.error(
+                    title="下载失败",
+                    content=f"下载失败: {str(e)}",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+
     class SettingsPage(QWidget):
         """设置页面"""
         logout_signal = pyqtSignal()  # 退出登录信号
@@ -6369,6 +6610,37 @@ def main():
             
             layout.addWidget(testCard)
             
+            # ========== 更新 ==========
+            updateCard = QFrame()
+            updateCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
+            updateLayout = QVBoxLayout(updateCard)
+            updateLayout.setContentsMargins(20, 18, 20, 18)
+            updateLayout.setSpacing(12)
+            
+            updateTitle = QLabel("🔄 更新")
+            updateTitle.setStyleSheet("font-size: 14px; font-weight: bold; color: #333333; border: none; background: transparent;")
+            updateLayout.addWidget(updateTitle)
+            
+            # 检查更新按钮
+            checkUpdateBtn = QPushButton("检查更新")
+            checkUpdateBtn.setCursor(Qt.PointingHandCursor)
+            checkUpdateBtn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2196F3;
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    border: none;
+                }
+                QPushButton:hover { background-color: #1976D2; }
+                QPushButton:pressed { background-color: #1565C0; }
+            """)
+            checkUpdateBtn.clicked.connect(self.checkUpdate)
+            updateLayout.addWidget(checkUpdateBtn)
+            
+            layout.addWidget(updateCard)
+            
             # ========== 关于 ==========
             aboutCard = QFrame()
             aboutCard.setStyleSheet("QFrame { background-color: white; border-radius: 12px; border: none; }")
@@ -6381,7 +6653,7 @@ def main():
             aboutLayout.addWidget(aboutTitle)
             
             aboutText = QLabel(
-                "工作日报助手 v0.25\n"
+                "工作日报助手 v0.3\n"
                 "自动截图分析工作内容，生成工作日报。"
             )
             aboutText.setWordWrap(True)
@@ -6396,6 +6668,108 @@ def main():
             
             # 初始化模型选择状态
             self.onModelTypeChanged(self.modelCombo.currentText())
+        
+        def checkUpdate(self, silent=False):
+            """
+            检查更新
+            
+            参数:
+                silent: 是否静默检查（不显示"已是最新"提示）
+            
+            返回值:
+                dict: {'has_update': bool, 'latest_version': str, 'update_log': str, 'download_url': str}
+            """
+            import requests
+            
+            try:
+                print(f"[checkUpdate] 开始检查, silent={silent}")
+                response = requests.get(
+                    f"{API_BASE_URL}/api/check-update",
+                    params={"current_version": "v0.3"},
+                    timeout=5
+                )
+                
+                print(f"[checkUpdate] 响应状态: {response.status_code}")
+                
+                if response.status_code != 200:
+                    if not silent:
+                        InfoBar.error(
+                            title="检查失败",
+                            content=f"服务器返回错误: {response.status_code}",
+                            orient=Qt.Horizontal,
+                            isClosable=True,
+                            position=InfoBarPosition.TOP,
+                            duration=3000,
+                            parent=self
+                        )
+                    return None
+                
+                try:
+                    result = response.json()
+                    print(f"[checkUpdate] 解析结果: {result}")
+                except:
+                    if not silent:
+                        InfoBar.error(
+                            title="检查失败",
+                            content="服务器返回数据格式错误",
+                            orient=Qt.Horizontal,
+                            isClosable=True,
+                            position=InfoBarPosition.TOP,
+                            duration=3000,
+                            parent=self
+                        )
+                    return None
+                
+                if result.get('success'):
+                    has_update = result.get('has_update', False)
+                    current_version = result.get('current_version', 'v0.3')
+                    latest_version = result.get('latest_version', 'v0.3')
+                    update_log = result.get('update_log', '')
+                    download_url = result.get('download_url', '')
+                    
+                    print(f"[checkUpdate] has_update={has_update}, latest={latest_version}")
+                    
+                    if has_update:
+                        if not silent:
+                            dialog = UpdateDialog(
+                                current_version,
+                                latest_version,
+                                update_log,
+                                download_url,
+                                self
+                            )
+                            dialog.exec_()
+                        return result
+                    else:
+                        if not silent:
+                            dialog = LatestVersionDialog(current_version, update_log, self)
+                            dialog.exec_()
+                        return result
+                else:
+                    if not silent:
+                        InfoBar.error(
+                            title="检查失败",
+                            content=result.get('message', '无法获取版本信息'),
+                            orient=Qt.Horizontal,
+                            isClosable=True,
+                            position=InfoBarPosition.TOP,
+                            duration=3000,
+                            parent=self
+                        )
+                    return None
+            except Exception as e:
+                print(f"[checkUpdate] 异常: {e}")
+                if not silent:
+                    InfoBar.error(
+                        title="检查失败",
+                        content=f"发生错误: {str(e)}",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+                return None
         
         def onModelTypeChanged(self, text):
             """模型类型改变时的处理"""
@@ -6994,6 +7368,18 @@ def main():
             # 标志是否从托盘恢复
             self._was_minimized = False
             
+            # 更新检查相关
+            self._update_available = False
+            self._update_timer = QTimer()
+            self._update_timer.timeout.connect(self.autoCheckUpdate)
+            self._update_badge = None
+            
+            # 启动自动检查更新定时器（每10分钟）
+            self._update_timer.start(10 * 60 * 1000)
+            
+            # 标记是否已检查过更新
+            self._has_checked_update = False
+            
             # 保存页面引用映射
             self._page_map = {
                 'todayPage': self.todayPage,
@@ -7025,6 +7411,86 @@ def main():
             """重新登录成功"""
             self.show()
             self.settingsPage.updateAccountInfo()
+            
+            # 登录成功后延迟检查更新
+            if not self._has_checked_update:
+                self._has_checked_update = True
+                QTimer.singleShot(3000, self.checkUpdateOnStartup)
+        
+        def autoCheckUpdate(self):
+            """自动检查更新（静默）"""
+            try:
+                result = self.settingsPage.checkUpdate(silent=True)
+                if result and result.get('has_update'):
+                    self._update_available = True
+                    self.showUpdateBadge(True)
+                else:
+                    self._update_available = False
+                    self.showUpdateBadge(False)
+            except:
+                pass
+        
+        def checkUpdateOnStartup(self):
+            """启动时检查更新"""
+            try:
+                print("[更新检查] 开始检查更新...")
+                result = self.settingsPage.checkUpdate(silent=True)
+                print(f"[更新检查] 结果: {result}")
+                if result and result.get('has_update'):
+                    print("[更新检查] 发现新版本，弹窗提示")
+                    self._update_available = True
+                    self.showUpdateBadge(True)
+                    # 弹窗提示
+                    dialog = UpdateDialog(
+                        result.get('current_version', 'v0.3'),
+                        result.get('latest_version', ''),
+                        result.get('update_log', ''),
+                        result.get('download_url', ''),
+                        self
+                    )
+                    dialog.exec_()
+                else:
+                    print("[更新检查] 已是最新版本")
+            except Exception as e:
+                print(f"[更新检查] 发生错误: {e}")
+        
+        def showUpdateBadge(self, show):
+            """显示/隐藏更新红点"""
+            if show:
+                if not self._update_badge:
+                    self._update_badge = QLabel(self)
+                    self._update_badge.setFixedSize(10, 10)
+                    self._update_badge.setStyleSheet("""
+                        QLabel {
+                            background-color: #EF4444;
+                            border-radius: 5px;
+                            border: 2px solid white;
+                        }
+                    """)
+                # 定位到设置图标右上角
+                self._update_badge.show()
+                self._update_badge.raise_()
+                # 延迟定位，因为导航栏可能还没完全渲染
+                QTimer.singleShot(100, self._positionUpdateBadge)
+            else:
+                if self._update_badge:
+                    self._update_badge.hide()
+        
+        def _positionUpdateBadge(self):
+            """定位更新红点"""
+            if self._update_badge and self._update_badge.isVisible():
+                # 找到设置按钮的位置
+                try:
+                    settings_btn = self.navigationInterface.widget("settingsPage")
+                    if settings_btn:
+                        pos = settings_btn.mapTo(self, QPoint(0, 0))
+                        self._update_badge.move(
+                            pos.x() + settings_btn.width() - 12,
+                            pos.y() + 2
+                        )
+                except:
+                    # 如果找不到，隐藏徽章
+                    self._update_badge.hide()
         
         def setupSystemTray(self):
             """设置系统托盘图标和菜单"""
@@ -7271,6 +7737,7 @@ def main():
         """登录成功后显示主窗口"""
         login_window.close()
         window.show()
+        window.onLoginSuccess()
     
     login_window.login_success.connect(on_login_success)
     login_window.show()
